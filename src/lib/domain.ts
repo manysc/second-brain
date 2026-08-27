@@ -16,6 +16,7 @@ export type KnowledgeItem = {
   status: string;
   confidence: Confidence;
   owner: string | null;
+  stakeholders: string[];
   dueDate: string | null;
   dueDateSourceText: string | null;
   rationale: string | null;
@@ -39,6 +40,7 @@ export type Topic = {
   id: string;
   name: string;
   items: KnowledgeItem[];
+  stakeholders: string[];
 };
 
 export type Meeting = {

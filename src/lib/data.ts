@@ -28,12 +28,17 @@ const normalizeConfidence = (value: string): Confidence => {
   return normalized === "HIGH" || normalized === "LOW" ? normalized : "MEDIUM";
 };
 const normalizeEvidence = (value: z.infer<typeof evidenceSchema>): Evidence => ({ speaker: value.speaker ?? null, timestamp: value.timestamp ?? null, quote: value.quote, context: value.context ?? null });
-const normalize = (candidate: Candidate, type: ItemType, meetingId: string): KnowledgeItem => ({
-  id: `${meetingId}:${candidate.candidate_id}`, type, description: candidate.description, theme: candidate.theme ?? null, status: candidate.status,
-  confidence: normalizeConfidence(candidate.confidence), owner: candidate.owner ?? candidate.proposed_by ?? candidate.decision_owner ?? null,
-  dueDate: candidate.due_date ?? null, dueDateSourceText: candidate.due_date_source_text ?? null, rationale: candidate.rationale ?? null, resolution: candidate.resolution ?? null,
-  evidence: normalizeEvidence(candidate.evidence), relatedIds: candidate.related_candidate_ids, meetingId,
-});
+const normalize = (candidate: Candidate, type: ItemType, meetingId: string): KnowledgeItem => {
+  const owner = candidate.owner ?? candidate.proposed_by ?? candidate.decision_owner ?? null;
+  const speaker = candidate.evidence.speaker ?? null;
+  const stakeholders = [...new Set([owner, speaker].filter((value): value is string => !!value))];
+  return {
+    id: `${meetingId}:${candidate.candidate_id}`, type, description: candidate.description, theme: candidate.theme ?? null, status: candidate.status,
+    confidence: normalizeConfidence(candidate.confidence), owner, stakeholders,
+    dueDate: candidate.due_date ?? null, dueDateSourceText: candidate.due_date_source_text ?? null, rationale: candidate.rationale ?? null, resolution: candidate.resolution ?? null,
+    evidence: normalizeEvidence(candidate.evidence), relatedIds: candidate.related_candidate_ids, meetingId,
+  };
+};
 
 export function loadMeeting(): Meeting {
   const file = path.join(process.cwd(), "data", "meeting-extract.json");
@@ -56,7 +61,7 @@ export function loadMeeting(): Meeting {
     const topic = item.theme ?? "Uncategorized";
     topicMap.set(topic, [...(topicMap.get(topic) ?? []), item]);
   }
-  const topics: Topic[] = [...topicMap.entries()].map(([name, topicItems]) => ({ id: `${meetingId}:${name}`, name, items: topicItems }));
+  const topics: Topic[] = [...topicMap.entries()].map(([name, topicItems]) => ({ id: `${meetingId}:${name}`, name, items: topicItems, stakeholders: [...new Set(topicItems.flatMap((item) => item.stakeholders))] }));
   return { id: meetingId, title: parsed.meeting.title, date: parsed.meeting.date, sourceUrl: parsed.meeting.source_url, items, reviewCandidates, topics };
 }
 
