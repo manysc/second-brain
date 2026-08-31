@@ -7,15 +7,39 @@ services:
       POSTGRES_PASSWORD: second_brain
       POSTGRES_DB: second_brain
     ports:
-      # host 5433: this machine already has an unrelated postgres container on 5432
-      - "5433:5432"
+      # host 5432: this machine already has an unrelated postgres container on 5432
+      - "5432:5432"
     volumes:
       - second_brain_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U second_brain -d second_brain"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - pg_network
+
+  pg_admin:
+    image: dpage/pgadmin4:latest
+    container_name: second_brain_pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=salas
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - pg_network
+
   seaweedfs:
     image: chrislusf/seaweedfs
     container_name: second_brain_seaweedfs
     ports:
-      - "8334:8333"
+      - "8333:8333"
     entrypoint: /bin/sh -c
     # dev-only credentials, not real secrets
     command: |
@@ -42,7 +66,42 @@ services:
       weed server -dir=/data -s3 -s3.config=/etc/seaweedfs/config.json"
     volumes:
       - second_brain_seaweed_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
     restart: unless-stopped
+
+  # Web-based Admin UI for SeaweedFS: browse buckets/files (with inline
+  # image/PDF preview), inspect cluster topology/volumes, etc. Same tag as
+  # `seaweedfs` above to guarantee wire-protocol compatibility. Bound to
+  # 127.0.0.1 only — open http://localhost:23646 in a browser to use it.
+  # Change the default admin/admin login via SEAWEEDFS_ADMIN_USER /
+  # SEAWEEDFS_ADMIN_PASSWORD env vars (e.g. in a local .env override).
+  seaweedfs-admin:
+    image: chrislusf/seaweedfs:latest
+    container_name: second_brain_seaweedfs_admin
+    command: >-
+      admin -port=23646 -master=second_brain_seaweedfs:9333 -dataDir=/data
+      -adminUser=${SEAWEEDFS_ADMIN_USER:-admin}
+      -adminPassword=${SEAWEEDFS_ADMIN_PASSWORD:-admin}
+    ports:
+      - "127.0.0.1:23646:23646"
+    volumes:
+      - second_brain_seaweedfs_admin_data:/data
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   second_brain_pgdata:
   second_brain_seaweed_data:
+  second_brain_seaweedfs_admin_data:
+  pgadmin_data:
+
+networks:
+  pg_network:
+    driver: bridge
