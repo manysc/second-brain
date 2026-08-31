@@ -1,7 +1,16 @@
-"""Ports scripts/verify-ingestion.mjs: sanity-checks the raw extraction file and load_meeting()."""
+"""Ports scripts/verify-ingestion.mjs: sanity-checks the raw extraction files and app.data loading."""
 import json
+from pathlib import Path
 
-from app.data import DATA_FILE, load_meeting
+import boto3
+import pytest
+from moto import mock_aws
+
+from app import data, s3_store
+
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+BUCKET = "test-bucket"
+PREFIX = "meetings/"
 
 EXPECTED_COUNTS = {"ideas": 2, "decisions": 5, "actions": 10, "questions": 7, "review_candidates": 4}
 EXPECTED_RELATIONS = [
@@ -14,42 +23,86 @@ EXPECTED_RELATIONS = [
 ]
 
 
-def _raw_data() -> dict:
-    original = DATA_FILE.read_text(encoding="utf8").strip()
+def _raw_data(filename: str = "meeting-extract.json") -> dict:
+    original = (DATA_DIR / filename).read_text(encoding="utf8").strip()
     repaired = original if original.startswith("{") else f"{{{original}}}"
     return json.loads(repaired)
 
 
 def test_candidate_counts_match_expected():
-    data = _raw_data()
+    raw = _raw_data()
     for key, count in EXPECTED_COUNTS.items():
-        assert len(data[key]) == count, f"{key}: expected {count}, got {len(data[key])}"
+        assert len(raw[key]) == count, f"{key}: expected {count}, got {len(raw[key])}"
 
 
 def test_related_candidate_links_are_preserved():
-    data = _raw_data()
-    all_candidates = [*data["ideas"], *data["decisions"], *data["actions"], *data["questions"]]
+    raw = _raw_data()
+    all_candidates = [*raw["ideas"], *raw["decisions"], *raw["actions"], *raw["questions"]]
     by_id = {candidate["candidate_id"]: candidate for candidate in all_candidates}
     for source_id, target_id in EXPECTED_RELATIONS:
         assert target_id in by_id[source_id]["related_candidate_ids"], f"{source_id} -> {target_id} missing"
 
 
 def test_ambiguous_due_dates_are_not_fabricated():
-    data = _raw_data()
-    all_candidates = [*data["ideas"], *data["decisions"], *data["actions"], *data["questions"]]
+    raw = _raw_data()
+    all_candidates = [*raw["ideas"], *raw["decisions"], *raw["actions"], *raw["questions"]]
     by_id = {candidate["candidate_id"]: candidate for candidate in all_candidates}
     assert by_id["A-009"]["due_date"] == "2026-08-25"
     assert by_id["A-010"]["due_date"] is None
 
 
 def test_review_candidates_are_neither_promoted_nor_lost():
-    data = _raw_data()
-    assert len(data["review_candidates"]) == 4
+    raw = _raw_data()
+    assert len(raw["review_candidates"]) == 4
 
 
-def test_load_meeting_normalizes_the_same_counts():
-    meeting = load_meeting()
-    assert len(meeting.items) == sum(
-        EXPECTED_COUNTS[key] for key in ("ideas", "decisions", "actions", "questions")
-    )
-    assert len(meeting.review_candidates) == EXPECTED_COUNTS["review_candidates"]
+@pytest.fixture
+def s3_env(monkeypatch):
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("S3_BUCKET", BUCKET)
+    monkeypatch.setenv("S3_PREFIX", PREFIX)
+    # moto only intercepts requests that match a real AWS endpoint pattern
+    monkeypatch.setenv("S3_ENDPOINT_URL", "https://s3.amazonaws.com")
+    monkeypatch.setenv("S3_REGION", "us-east-1")
+    data.clear_cache()
+    s3_store.clear_client_cache()
+    yield
+    data.clear_cache()
+    s3_store.clear_client_cache()
+
+
+def _upload(client, filename: str) -> None:
+    client.upload_file(str(DATA_DIR / filename), BUCKET, f"{PREFIX}{filename}")
+
+
+def test_load_meetings_normalizes_the_same_counts(s3_env):
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "meeting-extract.json")
+
+        meetings = data.load_meetings()
+        assert len(meetings) == 1
+        meeting = meetings[0]
+        assert len(meeting.items) == sum(
+            EXPECTED_COUNTS[key] for key in ("ideas", "decisions", "actions", "questions")
+        )
+        assert len(meeting.review_candidates) == EXPECTED_COUNTS["review_candidates"]
+
+
+def test_load_meetings_derives_unique_ids_from_s3_key_when_source_ids_collide(s3_env):
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        # these fixtures share/omit meeting_id in their own JSON (real data-quality issue)
+        _upload(client, "MS-PS_1-1_Meeting-Extract_082126.json")
+        _upload(client, "MS-PS_1-1_Meeting-Extract_082726.json")
+
+        meetings = data.load_meetings()
+        assert len(meetings) == 2
+        assert meetings[0].id != meetings[1].id
+
+        all_ids = [item.id for meeting in meetings for item in meeting.items]
+        assert len(all_ids) == len(set(all_ids))
+

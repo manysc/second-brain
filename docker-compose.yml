@@ -9,5 +9,38 @@ services:
       - "5432:5432"
     volumes:
       - second_brain_pgdata:/var/lib/postgresql/data
+  seaweedfs:
+    image: chrislusf/seaweedfs
+    container_name: second_brain_seaweedfs
+    ports:
+      - "8334:8333"
+    entrypoint: /bin/sh -c
+    # dev-only credentials, not real secrets
+    command: |
+      "mkdir -p /etc/seaweedfs && echo '{
+        \"identities\": [
+          {
+            \"name\": \"second_brain\",
+            \"credentials\": [
+              {
+                \"accessKey\": \"second_brain\",
+                \"secretKey\": \"second_brain_dev_secret\"
+              }
+            ],
+            \"actions\": [
+              \"Admin\",
+              \"Read\",
+              \"Write\",
+              \"List\",
+              \"Tagging\"
+            ]
+          }
+        ]
+      }' > /etc/seaweedfs/config.json && \
+      weed server -dir=/data -s3 -s3.config=/etc/seaweedfs/config.json"
+    volumes:
+      - second_brain_seaweed_data:/data
+    restart: unless-stopped
 volumes:
   second_brain_pgdata:
+  second_brain_seaweed_data:

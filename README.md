@@ -16,6 +16,33 @@ The source JSON is preserved in `data/meeting-extract.json`. The provided file h
 
 PostgreSQL with pgvector is provided for the next persistence slice: `docker compose up -d`. The current slice works without Docker, an API key, or an external AI provider.
 
+## Backend (meeting data via SeaweedFS)
+
+The FastAPI backend in `backend/` loads meeting extraction files from a self-hosted [SeaweedFS](https://github.com/seaweedfs/seaweedfs) S3-compatible bucket instead of the local JSON file.
+
+```bash
+docker compose up -d seaweedfs
+cd backend
+python -m venv .venv && .venv\Scripts\activate  # or source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+`backend/.env` is committed with working defaults that match the `seaweedfs` compose service (`python-dotenv` loads it automatically on startup, so these survive process restarts). Override any of them with real shell env vars if needed:
+
+| Variable | Purpose | Example |
+| --- | --- | --- |
+| `S3_BUCKET` | Bucket holding meeting extract JSON files (required) | `second-brain` |
+| `S3_PREFIX` | Key prefix to list under (optional) | `meetings/` |
+| `S3_ENDPOINT_URL` | SeaweedFS S3 gateway URL (required) | `http://localhost:8334` |
+| `S3_REGION` | Arbitrary region (SeaweedFS doesn't validate it) | `us-east-1` |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Must match an identity in the `seaweedfs` compose service's config | `second_brain` / `second_brain_dev_secret` |
+
+Bootstrap the bucket with the sample extraction files (also reads `backend/.env` if run from `backend/`, or pass the same env vars manually):
+
+```bash
+python scripts/seed_seaweedfs.py
+```
+
 ## Architecture
 
 ```mermaid

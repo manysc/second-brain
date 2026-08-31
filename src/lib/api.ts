@@ -12,6 +12,14 @@ export function getMeeting(): Promise<Meeting> {
   return apiFetch<Meeting>("/api/meeting");
 }
 
+export function getMeetings(): Promise<Meeting[]> {
+  return apiFetch<Meeting[]>("/api/meetings");
+}
+
+export function getMeetingById(id: string): Promise<Meeting> {
+  return apiFetch<Meeting>(`/api/meetings/${encodeURIComponent(id)}`);
+}
+
 export function getItems(type?: ItemType): Promise<KnowledgeItem[]> {
   return apiFetch<KnowledgeItem[]>(type ? `/api/items?type=${type}` : "/api/items");
 }
