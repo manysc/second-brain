@@ -1,4 +1,29 @@
-import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
-import { getMeeting } from "@/lib/api";
-export default async function Topics() { const meeting = await getMeeting(); return <AppShell><div className="page-head"><div><p className="eyebrow">Knowledge / Topics</p><h1>Persistent threads</h1><p className="lede">A topic is a living body of knowledge, not a label. Start with what the meeting made visible.</p></div></div><div className="topic-grid">{meeting.topics.map((topic) => { const decisions=topic.items.filter(i=>i.type==='DECISION').length; const actions=topic.items.filter(i=>i.type==='ACTION').length; const questions=topic.items.filter(i=>i.type==='QUESTION').length; return <Link className="topic-card" key={topic.id} href={`/topics/${encodeURIComponent(topic.name)}`}><div className="topic-top"><span className="topic-status">ACTIVE</span><span>{meeting.date}</span></div><h2>{topic.name}</h2><p>{topic.items[0]?.description}</p><div className="topic-stats"><span><b>{topic.items.length}</b> items</span><span><b>{decisions}</b> decisions</span><span><b>{actions}</b> actions</span><span><b>{questions}</b> questions</span></div><p className="topic-stakeholders">{topic.stakeholders.length ? topic.stakeholders.join(", ") : "No stakeholders"}</p></Link>})}</div></AppShell>; }
+import { TopicGrid } from "@/components/TopicGrid";
+import { getTopics } from "@/lib/api";
+import { createTopicAction } from "@/lib/actions";
+
+export default async function Topics({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const topics = await getTopics();
+  const error = (await searchParams).error;
+
+  return (
+    <AppShell>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Knowledge / Topics</p>
+          <h1>Persistent threads</h1>
+          <p className="lede">A topic is a living body of knowledge, not a label. Start with what the meeting made visible.</p>
+        </div>
+      </div>
+      {error ? <p className="error-banner">{error}</p> : null}
+      <form className="topic-toolbar" action={createTopicAction}>
+        <input name="name" placeholder="New topic name" required />
+        <button>Create topic</button>
+      </form>
+      <TopicGrid topics={topics} />
+    </AppShell>
+  );
+}
+
+

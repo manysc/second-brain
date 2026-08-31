@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import type { ItemType, KnowledgeItem, Meeting, ReviewCandidate, Topic } from "./domain";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
@@ -7,6 +8,21 @@ async function apiFetch<T>(path: string): Promise<T> {
   if (!res.ok) throw new Error(`Backend request failed: ${path} (${res.status})`);
   return res.json() as Promise<T>;
 }
+
+async function apiMutate<T>(path: string, method: "POST" | "PATCH" | "DELETE", body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null);
+    throw new Error(payload?.detail ?? `Backend request failed: ${path} (${res.status})`);
+  }
+  return res.status === 204 ? (undefined as T) : (res.json() as Promise<T>);
+}
+
 
 export function getMeeting(): Promise<Meeting> {
   return apiFetch<Meeting>("/api/meeting");
@@ -32,8 +48,31 @@ export function getTopics(): Promise<Topic[]> {
   return apiFetch<Topic[]>("/api/topics");
 }
 
-export function getTopic(name: string): Promise<Topic> {
-  return apiFetch<Topic>(`/api/topics/${encodeURIComponent(name)}`);
+export async function getTopicById(id: string): Promise<Topic> {
+  const res = await fetch(`${API_BASE_URL}/api/topics/${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (res.status === 404) notFound();
+  if (!res.ok) throw new Error(`Backend request failed: /api/topics/${id} (${res.status})`);
+  return res.json() as Promise<Topic>;
+}
+
+export function createTopic(name: string): Promise<Topic> {
+  return apiMutate<Topic>("/api/topics", "POST", { name });
+}
+
+export function updateTopic(id: string, name: string): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}`, "PATCH", { name });
+}
+
+export function mergeTopics(sourceId: string, targetId: string): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(sourceId)}/merge`, "POST", { targetTopicId: targetId });
+}
+
+export function deleteTopic(id: string): Promise<void> {
+  return apiMutate<void>(`/api/topics/${encodeURIComponent(id)}`, "DELETE");
+}
+
+export function moveItemTopic(itemId: string, topicId: string | null): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(itemId)}/topic`, "PATCH", { topicId });
 }
 
 export function getReview(): Promise<ReviewCandidate[]> {

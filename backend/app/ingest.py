@@ -6,13 +6,15 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app import embeddings, s3_store
-from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow
+from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
 from app.models import (
     Confidence,
     Evidence,
@@ -124,6 +126,19 @@ def parse_meeting_from_s3(key: str) -> Meeting:
     return _normalize_extraction(parsed, _derive_meeting_id(key))
 
 
+def _resolve_topic_id(session: Session, theme: str | None, cache: dict[str, str]) -> str:
+    name = theme or "Uncategorized"
+    if name in cache:
+        return cache[name]
+    existing = session.execute(select(TopicRow).where(TopicRow.name == name)).scalar_one_or_none()
+    topic_id = existing.id if existing is not None else str(uuid.uuid4())
+    if existing is None:
+        session.add(TopicRow(id=topic_id, name=name))
+        session.flush()
+    cache[name] = topic_id
+    return topic_id
+
+
 def upsert_meeting(session: Session, meeting: Meeting) -> None:
     meeting_stmt = pg_insert(MeetingRow).values(
         id=meeting.id, title=meeting.title, date=meeting.date, source_url=meeting.source_url
@@ -136,10 +151,13 @@ def upsert_meeting(session: Session, meeting: Meeting) -> None:
 
     if meeting.items:
         item_vectors = embeddings.embed_texts([item.description for item in meeting.items])
+        topic_cache: dict[str, str] = {}
         for item, vector in zip(meeting.items, item_vectors):
+            topic_id = _resolve_topic_id(session, item.theme, topic_cache)
             item_stmt = pg_insert(KnowledgeItemRow).values(
                 id=item.id,
                 meeting_id=meeting.id,
+                topic_id=topic_id,
                 type=item.type,
                 description=item.description,
                 theme=item.theme,
@@ -161,6 +179,7 @@ def upsert_meeting(session: Session, meeting: Meeting) -> None:
             update_cols = {
                 col: getattr(item_stmt.excluded, col)
                 for col in (
+                    # topic_id intentionally excluded: preserves manual topic reassignments across re-ingestion
                     "type",
                     "description",
                     "theme",

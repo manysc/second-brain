@@ -1,12 +1,26 @@
 """Queries Postgres for the meeting knowledge base. Ingestion (S3 -> Postgres) lives in app/ingest.py."""
 from __future__ import annotations
 
-from sqlalchemy import select
+import uuid
+
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from app import db
-from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow
+from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
 from app.models import Evidence, KnowledgeItem, Meeting, ReviewCandidate, Topic
+
+
+class TopicNameConflict(Exception):
+    """Raised when creating/renaming a topic to a name that's already taken."""
+
+
+class TopicHasItems(Exception):
+    """Raised when deleting a topic that still has knowledge items assigned to it."""
+
+    def __init__(self, item_count: int) -> None:
+        super().__init__(item_count)
+        self.item_count = item_count
 
 
 def _item_from_row(row: KnowledgeItemRow) -> KnowledgeItem:
@@ -107,21 +121,115 @@ def all_review_candidates(meetings: list[Meeting]) -> list[ReviewCandidate]:
     return [candidate for meeting in meetings for candidate in meeting.review_candidates]
 
 
-def all_topics(meetings: list[Meeting]) -> list[Topic]:
-    topic_map: dict[str, list[KnowledgeItem]] = {}
-    for meeting in meetings:
-        for topic in meeting.topics:
-            topic_map.setdefault(topic.name, []).extend(topic.items)
+def _topic_from_row(row: TopicRow) -> Topic:
+    items = [_item_from_row(item_row) for item_row in row.items]
+    return Topic(
+        id=row.id,
+        name=row.name,
+        items=items,
+        stakeholders=list(dict.fromkeys(s for item in items for s in item.stakeholders)),
+    )
 
-    return [
-        Topic(
-            id=f"topic:{name}",
-            name=name,
-            items=items,
-            stakeholders=list(dict.fromkeys(s for item in items for s in item.stakeholders)),
+
+def all_topics() -> list[Topic]:
+    """All persisted topics, including ones with zero items (unlike the old theme-grouping)."""
+    with db.get_session() as session:
+        stmt = select(TopicRow).options(selectinload(TopicRow.items))
+        rows = session.execute(stmt).scalars().all()
+    return [_topic_from_row(row) for row in rows]
+
+
+def get_topic_by_id(topic_id: str) -> Topic | None:
+    with db.get_session() as session:
+        stmt = select(TopicRow).where(TopicRow.id == topic_id).options(selectinload(TopicRow.items))
+        row = session.execute(stmt).scalar_one_or_none()
+        return _topic_from_row(row) if row is not None else None
+
+
+def create_topic(name: str) -> Topic:
+    with db.get_session() as session:
+        existing = session.execute(select(TopicRow).where(TopicRow.name == name)).scalar_one_or_none()
+        if existing is not None:
+            raise TopicNameConflict(name)
+        row = TopicRow(id=str(uuid.uuid4()), name=name)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return _topic_from_row(row)
+
+
+def update_topic(topic_id: str, name: str) -> Topic | None:
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        conflict = session.execute(
+            select(TopicRow).where(TopicRow.name == name, TopicRow.id != topic_id)
+        ).scalar_one_or_none()
+        if conflict is not None:
+            raise TopicNameConflict(name)
+        row.name = name
+        for item_row in session.execute(
+            select(KnowledgeItemRow).where(KnowledgeItemRow.topic_id == topic_id)
+        ).scalars():
+            item_row.theme = name
+        session.commit()
+        session.refresh(row)
+        return _topic_from_row(row)
+
+
+def delete_topic(topic_id: str) -> bool:
+    with db.get_session() as session:
+        stmt = select(TopicRow).where(TopicRow.id == topic_id).options(selectinload(TopicRow.items))
+        row = session.execute(stmt).scalar_one_or_none()
+        if row is None:
+            return False
+        if row.items:
+            raise TopicHasItems(len(row.items))
+        session.delete(row)
+        session.commit()
+        return True
+
+
+def assign_item_topic(item_id: str, topic_id: str | None) -> KnowledgeItem | None:
+    with db.get_session() as session:
+        item_row = session.get(KnowledgeItemRow, item_id)
+        if item_row is None:
+            return None
+        topic_name = None
+        if topic_id is not None:
+            topic_row = session.get(TopicRow, topic_id)
+            if topic_row is None:
+                raise ValueError("topic not found")
+            topic_name = topic_row.name
+        item_row.topic_id = topic_id
+        item_row.theme = topic_name
+        session.commit()
+        session.refresh(item_row)
+        return _item_from_row(item_row)
+
+
+def merge_topics(source_topic_id: str, target_topic_id: str) -> Topic:
+    """Moves every item out of the source topic into the target topic, then deletes the
+    now-empty source topic (backs drag-and-drop merging, e.g. "Uncategorized" onto a topic)."""
+    if source_topic_id == target_topic_id:
+        raise ValueError("cannot merge a topic into itself")
+    with db.get_session() as session:
+        source = session.get(TopicRow, source_topic_id)
+        target = session.get(TopicRow, target_topic_id)
+        if source is None or target is None:
+            raise LookupError("topic not found")
+        session.execute(
+            update(KnowledgeItemRow)
+            .where(KnowledgeItemRow.topic_id == source_topic_id)
+            .values(topic_id=target_topic_id, theme=target.name)
         )
-        for name, items in topic_map.items()
-    ]
+        session.delete(source)
+        session.commit()
+
+    merged = get_topic_by_id(target_topic_id)
+    assert merged is not None
+    return merged
 
 
 def related_items(item: KnowledgeItem, meetings: list[Meeting]) -> list[KnowledgeItem]:

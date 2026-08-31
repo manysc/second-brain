@@ -27,13 +27,24 @@ class MeetingRow(Base):
     )
 
 
+class TopicRow(Base):
+    __tablename__ = "topics"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True)
+
+    items: Mapped[list["KnowledgeItemRow"]] = relationship(back_populates="topic")
+
+
 class KnowledgeItemRow(Base):
     __tablename__ = "knowledge_items"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     meeting_id: Mapped[str] = mapped_column(ForeignKey("meetings.id"))
+    topic_id: Mapped[str | None] = mapped_column(ForeignKey("topics.id"), nullable=True)
     type: Mapped[str] = mapped_column(String)
     description: Mapped[str] = mapped_column(String)
+    # legacy free-text grouping key, kept in sync with topic.name for the per-meeting view
     theme: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String)
     confidence: Mapped[str] = mapped_column(String)
@@ -52,6 +63,7 @@ class KnowledgeItemRow(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
 
     meeting: Mapped[MeetingRow] = relationship(back_populates="items")
+    topic: Mapped[TopicRow | None] = relationship(back_populates="items")
 
 
 class ReviewCandidateRow(Base):

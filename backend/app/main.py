@@ -1,22 +1,43 @@
 """REST API exposing the meeting knowledge base. Replaces the logic that used to live in src/lib/data.ts."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import data
-from app.models import ItemDetail, ItemType, KnowledgeItem, Meeting, ReviewCandidate, Topic
+from app import data, db
+from app.models import (
+    ItemDetail,
+    ItemTopicUpdate,
+    ItemType,
+    KnowledgeItem,
+    Meeting,
+    ReviewCandidate,
+    Topic,
+    TopicCreate,
+    TopicMerge,
+    TopicUpdate,
+)
 
 # picks up backend/.env so S3_* config survives across process restarts
 load_dotenv()
 
-app = FastAPI(title="second-brain backend")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    db.init_db()
+    yield
+
+
+app = FastAPI(title="second-brain backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -65,19 +86,68 @@ def get_item(item_id: str) -> ItemDetail:
 
 @app.get("/api/topics", response_model=list[Topic])
 def get_topics() -> list[Topic]:
-    return data.all_topics(data.load_meetings())
+    return data.all_topics()
 
 
-@app.get("/api/topics/{name}", response_model=Topic)
-def get_topic(name: str) -> Topic:
-    topics = data.all_topics(data.load_meetings())
-    topic = next((candidate for candidate in topics if candidate.name == name), None)
-    # mirror the frontend's previous fallback: show the first topic instead of 404ing
-    if topic is None and topics:
-        topic = topics[0]
+@app.get("/api/topics/{topic_id}", response_model=Topic)
+def get_topic(topic_id: str) -> Topic:
+    topic = data.get_topic_by_id(topic_id)
     if topic is None:
-        raise HTTPException(status_code=404, detail="No topics available")
+        raise HTTPException(status_code=404, detail="Topic not found")
     return topic
+
+
+@app.post("/api/topics", response_model=Topic, status_code=201)
+def create_topic(payload: TopicCreate) -> Topic:
+    try:
+        return data.create_topic(payload.name)
+    except data.TopicNameConflict:
+        raise HTTPException(status_code=409, detail=f"Topic '{payload.name}' already exists")
+
+
+@app.patch("/api/topics/{topic_id}", response_model=Topic)
+def update_topic(topic_id: str, payload: TopicUpdate) -> Topic:
+    try:
+        topic = data.update_topic(topic_id, payload.name)
+    except data.TopicNameConflict:
+        raise HTTPException(status_code=409, detail=f"Topic '{payload.name}' already exists")
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+@app.delete("/api/topics/{topic_id}", status_code=204)
+def delete_topic(topic_id: str) -> None:
+    try:
+        deleted = data.delete_topic(topic_id)
+    except data.TopicHasItems as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Topic still has {exc.item_count} item(s) assigned; reassign them before deleting",
+        )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+
+@app.patch("/api/items/{item_id}/topic", response_model=KnowledgeItem)
+def set_item_topic(item_id: str, payload: ItemTopicUpdate) -> KnowledgeItem:
+    try:
+        item = data.assign_item_topic(item_id, payload.topic_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+@app.post("/api/topics/{topic_id}/merge", response_model=Topic)
+def merge_topic(topic_id: str, payload: TopicMerge) -> Topic:
+    try:
+        return data.merge_topics(topic_id, payload.target_topic_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Topic not found")
 
 
 @app.get("/api/review", response_model=list[ReviewCandidate])

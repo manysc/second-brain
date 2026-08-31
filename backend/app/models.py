@@ -56,6 +56,22 @@ class Topic(CamelModel):
     stakeholders: list[str]
 
 
+class TopicCreate(CamelModel):
+    name: str
+
+
+class TopicUpdate(CamelModel):
+    name: str
+
+
+class ItemTopicUpdate(CamelModel):
+    topic_id: str | None = Field(default=None, alias="topicId")
+
+
+class TopicMerge(CamelModel):
+    target_topic_id: str = Field(alias="targetTopicId")
+
+
 class Meeting(CamelModel):
     id: str
     title: str
