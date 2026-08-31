@@ -69,6 +69,8 @@ class Meeting(CamelModel):
 class ItemDetail(CamelModel):
     item: KnowledgeItem
     related: list[KnowledgeItem]
+    # pgvector nearest neighbors, distinct from `related` (which is evidence-grounded only)
+    similar: list[KnowledgeItem] = Field(default_factory=list)
 
 
 # --- Raw extraction file shape (mirrors the zod schemas previously in src/lib/data.ts) ---

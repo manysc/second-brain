@@ -1,12 +1,14 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    container_name: second_brain_postgres
     environment:
       POSTGRES_USER: second_brain
       POSTGRES_PASSWORD: second_brain
       POSTGRES_DB: second_brain
     ports:
-      - "5432:5432"
+      # host 5433: this machine already has an unrelated postgres container on 5432
+      - "5433:5432"
     volumes:
       - second_brain_pgdata:/var/lib/postgresql/data
   seaweedfs:

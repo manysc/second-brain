@@ -6,7 +6,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from app import data, s3_store
+from app import ingest, s3_store
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 BUCKET = "test-bucket"
@@ -65,10 +65,8 @@ def s3_env(monkeypatch):
     # moto only intercepts requests that match a real AWS endpoint pattern
     monkeypatch.setenv("S3_ENDPOINT_URL", "https://s3.amazonaws.com")
     monkeypatch.setenv("S3_REGION", "us-east-1")
-    data.clear_cache()
     s3_store.clear_client_cache()
     yield
-    data.clear_cache()
     s3_store.clear_client_cache()
 
 
@@ -76,22 +74,22 @@ def _upload(client, filename: str) -> None:
     client.upload_file(str(DATA_DIR / filename), BUCKET, f"{PREFIX}{filename}")
 
 
-def test_load_meetings_normalizes_the_same_counts(s3_env):
+def test_parse_meeting_from_s3_normalizes_the_same_counts(s3_env):
     with mock_aws():
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
         _upload(client, "meeting-extract.json")
 
-        meetings = data.load_meetings()
-        assert len(meetings) == 1
-        meeting = meetings[0]
+        keys = s3_store.list_extract_keys()
+        assert len(keys) == 1
+        meeting = ingest.parse_meeting_from_s3(keys[0])
         assert len(meeting.items) == sum(
             EXPECTED_COUNTS[key] for key in ("ideas", "decisions", "actions", "questions")
         )
         assert len(meeting.review_candidates) == EXPECTED_COUNTS["review_candidates"]
 
 
-def test_load_meetings_derives_unique_ids_from_s3_key_when_source_ids_collide(s3_env):
+def test_parse_meeting_from_s3_derives_unique_ids_from_s3_key_when_source_ids_collide(s3_env):
     with mock_aws():
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
@@ -99,7 +97,7 @@ def test_load_meetings_derives_unique_ids_from_s3_key_when_source_ids_collide(s3
         _upload(client, "MS-PS_1-1_Meeting-Extract_082126.json")
         _upload(client, "MS-PS_1-1_Meeting-Extract_082726.json")
 
-        meetings = data.load_meetings()
+        meetings = [ingest.parse_meeting_from_s3(key) for key in s3_store.list_extract_keys()]
         assert len(meetings) == 2
         assert meetings[0].id != meetings[1].id
 

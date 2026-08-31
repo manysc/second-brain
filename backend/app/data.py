@@ -1,98 +1,62 @@
-"""Ports src/lib/data.ts: load, validate and normalize meeting extraction files from object storage."""
+"""Queries Postgres for the meeting knowledge base. Ingestion (S3 -> Postgres) lives in app/ingest.py."""
 from __future__ import annotations
 
-import json
-import re
-from functools import lru_cache
-from pathlib import Path
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
-from app import s3_store
-from app.models import (
-    Confidence,
-    Evidence,
-    ItemType,
-    KnowledgeItem,
-    Meeting,
-    RawCandidate,
-    RawEvidence,
-    RawExtraction,
-    ReviewCandidate,
-    Topic,
-)
+from app import db
+from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow
+from app.models import Evidence, KnowledgeItem, Meeting, ReviewCandidate, Topic
 
 
-def _normalize_confidence(value: str) -> Confidence:
-    normalized = value.upper()
-    return normalized if normalized in ("HIGH", "LOW") else "MEDIUM"
-
-
-def _normalize_evidence(raw: RawEvidence) -> Evidence:
-    return Evidence(speaker=raw.speaker, timestamp=raw.timestamp, quote=raw.quote, context=raw.context)
-
-
-def _normalize_item(candidate: RawCandidate, item_type: ItemType, meeting_id: str) -> KnowledgeItem:
-    owner = candidate.owner or candidate.proposed_by or candidate.decision_owner
-    speaker = candidate.evidence.speaker
-    stakeholders = list(dict.fromkeys(value for value in (owner, speaker) if value))
+def _item_from_row(row: KnowledgeItemRow) -> KnowledgeItem:
     return KnowledgeItem(
-        id=f"{meeting_id}:{candidate.candidate_id}",
-        type=item_type,
-        description=candidate.description,
-        theme=candidate.theme,
-        status=candidate.status,
-        confidence=_normalize_confidence(candidate.confidence),
-        owner=owner,
-        stakeholders=stakeholders,
-        due_date=candidate.due_date,
-        due_date_source_text=candidate.due_date_source_text,
-        rationale=candidate.rationale,
-        resolution=candidate.resolution,
-        evidence=_normalize_evidence(candidate.evidence),
-        related_ids=candidate.related_candidate_ids,
-        meeting_id=meeting_id,
+        id=row.id,
+        type=row.type,
+        description=row.description,
+        theme=row.theme,
+        status=row.status,
+        confidence=row.confidence,
+        owner=row.owner,
+        stakeholders=list(row.stakeholders),
+        due_date=row.due_date,
+        due_date_source_text=row.due_date_source_text,
+        rationale=row.rationale,
+        resolution=row.resolution,
+        evidence=Evidence(
+            speaker=row.evidence_speaker,
+            timestamp=row.evidence_timestamp,
+            quote=row.evidence_quote,
+            context=row.evidence_context,
+        ),
+        related_ids=list(row.related_ids),
+        meeting_id=row.meeting_id,
     )
 
 
-def _repair_json(text: str) -> dict:
-    original = text.strip()
-    # the source file is sometimes missing its enclosing braces
-    repaired = original if original.startswith("{") else f"{{{original}}}"
-    return json.loads(repaired)
+def _review_candidate_from_row(row: ReviewCandidateRow) -> ReviewCandidate:
+    return ReviewCandidate(
+        id=row.id,
+        type=row.type,
+        description=row.description,
+        reason=row.reason,
+        confidence=row.confidence,
+        evidence=Evidence(
+            speaker=row.evidence_speaker,
+            timestamp=row.evidence_timestamp,
+            quote=row.evidence_quote,
+            context=row.evidence_context,
+        ),
+        status=row.status,
+    )
 
 
-def _derive_meeting_id(key: str) -> str:
-    # the extraction JSON's own meeting_id is sometimes blank or duplicated across files;
-    # the S3 key is always unique, so it's the source of truth for id-namespacing
-    stem = Path(key).stem
-    return re.sub(r"[^A-Za-z0-9_-]", "-", stem)
-
-
-def _normalize_extraction(parsed: RawExtraction, meeting_id: str) -> Meeting:
-    items = [
-        *(_normalize_item(c, "IDEA", meeting_id) for c in parsed.ideas),
-        *(_normalize_item(c, "DECISION", meeting_id) for c in parsed.decisions),
-        *(_normalize_item(c, "ACTION", meeting_id) for c in parsed.actions),
-        *(_normalize_item(c, "QUESTION", meeting_id) for c in parsed.questions),
-    ]
-
-    review_candidates = [
-        ReviewCandidate(
-            id=f"{meeting_id}:review-{index + 1}",
-            type=candidate.candidate_type,
-            description=candidate.description,
-            reason=candidate.reason_for_review,
-            confidence=_normalize_confidence(candidate.confidence),
-            evidence=_normalize_evidence(candidate.evidence),
-            status="PENDING",
-        )
-        for index, candidate in enumerate(parsed.review_candidates)
-    ]
-
+def _topics_for_items(meeting_id: str, items: list[KnowledgeItem]) -> list[Topic]:
     topic_map: dict[str, list[KnowledgeItem]] = {}
     for item in items:
         topic_map.setdefault(item.theme or "Uncategorized", []).append(item)
 
-    topics = [
+    return [
         Topic(
             id=f"{meeting_id}:{name}",
             name=name,
@@ -102,32 +66,28 @@ def _normalize_extraction(parsed: RawExtraction, meeting_id: str) -> Meeting:
         for name, topic_items in topic_map.items()
     ]
 
+
+def _meeting_from_row(row: MeetingRow) -> Meeting:
+    items = [_item_from_row(item_row) for item_row in row.items]
     return Meeting(
-        id=meeting_id,
-        title=parsed.meeting.title,
-        date=parsed.meeting.date,
-        source_url=parsed.meeting.source_url,
+        id=row.id,
+        title=row.title,
+        date=row.date,
+        source_url=row.source_url,
         items=items,
-        review_candidates=review_candidates,
-        topics=topics,
+        review_candidates=[_review_candidate_from_row(c) for c in row.review_candidates],
+        topics=_topics_for_items(row.id, items),
     )
 
 
-@lru_cache(maxsize=1)
-def _load_all_meetings_cached() -> tuple[Meeting, ...]:
-    meetings = []
-    for key in s3_store.list_extract_keys():
-        parsed = RawExtraction.model_validate(_repair_json(s3_store.fetch_object_text(key)))
-        meetings.append(_normalize_extraction(parsed, _derive_meeting_id(key)))
-    return tuple(sorted(meetings, key=lambda meeting: meeting.date, reverse=True))
-
-
-def clear_cache() -> None:
-    _load_all_meetings_cached.cache_clear()
-
-
 def load_meetings() -> list[Meeting]:
-    return list(_load_all_meetings_cached())
+    with db.get_session() as session:
+        stmt = select(MeetingRow).options(
+            selectinload(MeetingRow.items), selectinload(MeetingRow.review_candidates)
+        )
+        rows = session.execute(stmt).scalars().all()
+        meetings = [_meeting_from_row(row) for row in rows]
+    return sorted(meetings, key=lambda meeting: meeting.date, reverse=True)
 
 
 def get_meeting(meeting_id: str) -> Meeting | None:
@@ -171,4 +131,22 @@ def related_items(item: KnowledgeItem, meetings: list[Meeting]) -> list[Knowledg
         for candidate in all_items(meetings)
         if candidate.id.split(":", 1)[1] in ids or candidate.id in ids
     ]
+
+
+def semantic_similar_items(item: KnowledgeItem, limit: int = 5) -> list[KnowledgeItem]:
+    """Nearest neighbors by pgvector cosine distance - a supplement to (not a replacement for)
+    the evidence-grounded `related_ids` links, so callers must keep the two clearly separate."""
+    excluded_ids = {item.id, *item.related_ids, *(f"{item.meeting_id}:{rid}" for rid in item.related_ids)}
+    with db.get_session() as session:
+        source_row = session.get(KnowledgeItemRow, item.id)
+        if source_row is None or source_row.embedding is None:
+            return []
+        stmt = (
+            select(KnowledgeItemRow)
+            .where(KnowledgeItemRow.id.notin_(excluded_ids))
+            .order_by(KnowledgeItemRow.embedding.cosine_distance(source_row.embedding))
+            .limit(limit)
+        )
+        rows = session.execute(stmt).scalars().all()
+        return [_item_from_row(row) for row in rows]
 

@@ -56,7 +56,11 @@ def get_item(item_id: str) -> ItemDetail:
     item = next((candidate for candidate in data.all_items(meetings) if candidate.id == item_id), None)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    return ItemDetail(item=item, related=data.related_items(item, meetings))
+    return ItemDetail(
+        item=item,
+        related=data.related_items(item, meetings),
+        similar=data.semantic_similar_items(item),
+    )
 
 
 @app.get("/api/topics", response_model=list[Topic])
