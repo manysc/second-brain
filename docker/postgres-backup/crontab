@@ -1,0 +1,2 @@
+# cron jobs don't inherit the container's stdout, so redirect explicitly to it
+0 3 * * 0 /usr/local/bin/backup.sh >> /proc/1/fd/1 2>&1

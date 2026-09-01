@@ -20,6 +20,24 @@ services:
     networks:
       - pg_network
 
+  postgres_backup:
+    build: ./docker/postgres-backup
+    container_name: second_brain_postgres_backup
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: second_brain
+      PGPASSWORD: second_brain
+      BACKUP_DATABASE: ${POSTGRES_BACKUP_DATABASE:-second_brain}
+    volumes:
+      - ${POSTGRES_BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pg_network
+    restart: unless-stopped
+
   pg_admin:
     image: dpage/pgadmin4:latest
     container_name: second_brain_pgadmin

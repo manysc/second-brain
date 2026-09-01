@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# default postgres_backup dump destination (overridden via POSTGRES_BACKUP_DIR)
+/backups
+
 # vercel
 .vercel
 
