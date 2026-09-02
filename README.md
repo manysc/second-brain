@@ -43,6 +43,25 @@ Bootstrap the bucket with the sample extraction files (also reads `backend/.env`
 python scripts/seed_seaweedfs.py
 ```
 
+## Semantic embeddings (sentence-transformers)
+
+Ingestion (`backend/app/ingest.py`) embeds every `KnowledgeItem` description with
+`sentence-transformers` (`all-MiniLM-L6-v2`, 384 dimensions) and stores the vector in the
+`knowledge_items.embedding` pgvector column. This powers two features that plain-text/explicit
+links can't cover on their own:
+
+- **"Similar items"** (`data.semantic_similar_items`, surfaced on `/items/[id]`) — nearest
+  neighbors by cosine distance, a supplement to (not a replacement for) the evidence-grounded
+  `related_ids` links.
+- **Duplicate detection on Accept** (`data._find_similar_item`, used by the `/review` page) — when
+  a review candidate is accepted, its description is embedded and compared against existing
+  items; a close match is merged into instead of creating a duplicate `KnowledgeItem`.
+
+If the model weights can't be downloaded (no network, or a blocked host such as a corporate TLS
+proxy), `backend/app/embeddings.py` catches the failure and falls back to a deterministic offline
+`HashingVectorizer` so the pgvector pipeline still runs end-to-end. It self-upgrades to the real
+model automatically once the download succeeds - no code change or re-ingestion required.
+
 ## Architecture
 
 ```mermaid

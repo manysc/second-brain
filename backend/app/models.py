@@ -68,6 +68,10 @@ class ItemTopicUpdate(CamelModel):
     topic_id: str | None = Field(default=None, alias="topicId")
 
 
+class ReviewStatusUpdate(CamelModel):
+    status: Literal["ACCEPTED", "REJECTED"]
+
+
 class TopicMerge(CamelModel):
     target_topic_id: str = Field(alias="targetTopicId")
 

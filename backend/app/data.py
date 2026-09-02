@@ -4,15 +4,23 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import select, update
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
-from app import db
+from app import db, embeddings
 from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
-from app.models import Evidence, KnowledgeItem, Meeting, ReviewCandidate, Topic
+from app.models import Evidence, ItemType, KnowledgeItem, Meeting, ReviewCandidate, ReviewStatus, Topic
+
+# cosine distance (embeddings are normalized, so 0=identical..~2=opposite) below which an
+# accepted review candidate is treated as a duplicate of an existing item rather than promoted
+DUPLICATE_MATCH_THRESHOLD = 0.2
 
 
 class TopicNameConflict(Exception):
     """Raised when creating/renaming a topic to a name that's already taken."""
+
+
+class ReviewCandidateAlreadyDecided(Exception):
+    """Raised when accepting/rejecting a review candidate that isn't PENDING anymore."""
 
 
 class TopicHasItems(Exception):
@@ -119,6 +127,83 @@ def all_items(meetings: list[Meeting]) -> list[KnowledgeItem]:
 
 def all_review_candidates(meetings: list[Meeting]) -> list[ReviewCandidate]:
     return [candidate for meeting in meetings for candidate in meeting.review_candidates]
+
+
+def _normalize_item_type(value: str) -> ItemType:
+    normalized = value.upper()
+    return normalized if normalized in ("IDEA", "DECISION", "ACTION", "QUESTION") else "IDEA"
+
+
+def _find_similar_item(session: Session, embedding: list[float]) -> KnowledgeItemRow | None:
+    distance_expr = KnowledgeItemRow.embedding.cosine_distance(embedding)
+    stmt = (
+        select(KnowledgeItemRow, distance_expr)
+        .where(KnowledgeItemRow.embedding.is_not(None))
+        .order_by(distance_expr)
+        .limit(1)
+    )
+    result = session.execute(stmt).first()
+    if result is None:
+        return None
+    row, distance = result
+    return row if distance < DUPLICATE_MATCH_THRESHOLD else None
+
+
+def _get_or_create_uncategorized_topic(session: Session) -> str:
+    existing = session.execute(select(TopicRow).where(TopicRow.name == "Uncategorized")).scalar_one_or_none()
+    if existing is not None:
+        return existing.id
+    topic_id = str(uuid.uuid4())
+    session.add(TopicRow(id=topic_id, name="Uncategorized"))
+    session.flush()
+    return topic_id
+
+
+def set_review_status(candidate_id: str, status: ReviewStatus) -> ReviewCandidate | None:
+    with db.get_session() as session:
+        row = session.get(ReviewCandidateRow, candidate_id)
+        if row is None:
+            return None
+        if row.status != "PENDING":
+            raise ReviewCandidateAlreadyDecided(candidate_id)
+
+        if status == "ACCEPTED":
+            vector = embeddings.embed_text(row.description)
+            existing = _find_similar_item(session, vector)
+            if existing is not None:
+                # merge: a near-duplicate item already exists, so reinforce it instead of duplicating
+                existing.confidence = "HIGH"
+            else:
+                owner = row.evidence_speaker
+                session.add(
+                    KnowledgeItemRow(
+                        id=f"{row.meeting_id}:accepted-{row.id.split(':', 1)[1]}",
+                        meeting_id=row.meeting_id,
+                        topic_id=_get_or_create_uncategorized_topic(session),
+                        type=_normalize_item_type(row.type),
+                        description=row.description,
+                        theme=None,
+                        status="Open",
+                        confidence="HIGH",
+                        owner=owner,
+                        stakeholders=[owner] if owner else [],
+                        due_date=None,
+                        due_date_source_text=None,
+                        rationale=row.reason,
+                        resolution=None,
+                        evidence_speaker=row.evidence_speaker,
+                        evidence_timestamp=row.evidence_timestamp,
+                        evidence_quote=row.evidence_quote,
+                        evidence_context=row.evidence_context,
+                        related_ids=[],
+                        embedding=vector,
+                    )
+                )
+
+        row.status = status
+        session.commit()
+        session.refresh(row)
+        return _review_candidate_from_row(row)
 
 
 def _topic_from_row(row: TopicRow) -> Topic:

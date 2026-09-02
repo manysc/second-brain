@@ -78,3 +78,7 @@ export function moveItemTopic(itemId: string, topicId: string | null): Promise<K
 export function getReview(): Promise<ReviewCandidate[]> {
   return apiFetch<ReviewCandidate[]>("/api/review");
 }
+
+export function updateReviewStatus(id: string, status: "ACCEPTED" | "REJECTED"): Promise<ReviewCandidate> {
+  return apiMutate<ReviewCandidate>(`/api/review/${encodeURIComponent(id)}`, "PATCH", { status });
+}

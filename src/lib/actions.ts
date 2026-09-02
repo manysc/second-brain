@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createTopic, deleteTopic, mergeTopics, moveItemTopic, updateTopic } from "./api";
+import { createTopic, deleteTopic, mergeTopics, moveItemTopic, updateReviewStatus, updateTopic } from "./api";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong";
@@ -72,4 +72,28 @@ export async function mergeTopicsAction(sourceTopicId: string, targetTopicId: st
     redirect(`/topics?error=${encodeURIComponent(errorMessage(err))}`);
   }
   revalidatePath("/topics");
+}
+
+async function decideReviewCandidate(formData: FormData, status: "ACCEPTED" | "REJECTED"): Promise<void> {
+  const candidateId = String(formData.get("candidateId") ?? "");
+
+  try {
+    await updateReviewStatus(candidateId, status);
+  } catch (err) {
+    redirect(`/review?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath("/review");
+  revalidatePath("/dashboard");
+  revalidatePath("/items");
+  revalidatePath("/topics");
+  revalidatePath("/meetings");
+  redirect("/review");
+}
+
+export async function acceptReviewAction(formData: FormData): Promise<void> {
+  await decideReviewCandidate(formData, "ACCEPTED");
+}
+
+export async function rejectReviewAction(formData: FormData): Promise<void> {
+  await decideReviewCandidate(formData, "REJECTED");
 }

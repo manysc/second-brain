@@ -16,6 +16,7 @@ from app.models import (
     KnowledgeItem,
     Meeting,
     ReviewCandidate,
+    ReviewStatusUpdate,
     Topic,
     TopicCreate,
     TopicMerge,
@@ -152,5 +153,16 @@ def merge_topic(topic_id: str, payload: TopicMerge) -> Topic:
 
 @app.get("/api/review", response_model=list[ReviewCandidate])
 def get_review() -> list[ReviewCandidate]:
-    return data.all_review_candidates(data.load_meetings())
+    return [c for c in data.all_review_candidates(data.load_meetings()) if c.status == "PENDING"]
+
+
+@app.patch("/api/review/{candidate_id}", response_model=ReviewCandidate)
+def update_review_status(candidate_id: str, payload: ReviewStatusUpdate) -> ReviewCandidate:
+    try:
+        candidate = data.set_review_status(candidate_id, payload.status)
+    except data.ReviewCandidateAlreadyDecided:
+        raise HTTPException(status_code=409, detail="Review candidate already decided")
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="Review candidate not found")
+    return candidate
 
