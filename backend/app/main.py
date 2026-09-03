@@ -1,6 +1,8 @@
 """REST API exposing the meeting knowledge base. Replaces the logic that used to live in src/lib/data.ts."""
 from __future__ import annotations
 
+import logging
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -8,7 +10,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import data, db
+from app import data, db, ingest
 from app.models import (
     ItemDetail,
     ItemTopicUpdate,
@@ -26,10 +28,19 @@ from app.models import (
 # picks up backend/.env so S3_* config survives across process restarts
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db.init_db()
+    if os.environ.get("INGEST_ON_STARTUP", "true").lower() not in ("false", "0"):
+        try:
+            count = ingest.ingest_and_commit()
+            logger.info("startup ingestion: %d meeting(s)", count)
+        except Exception:
+            # SeaweedFS/network hiccups shouldn't stop the API from serving existing Postgres data
+            logger.exception("startup ingestion failed; continuing with existing data")
     yield
 
 

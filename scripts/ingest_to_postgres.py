@@ -20,9 +20,7 @@ from app import db, ingest  # noqa: E402  (must follow load_dotenv/sys.path setu
 
 def main() -> None:
     db.init_db()
-    with db.get_session() as session:
-        count = ingest.ingest_all_from_s3(session)
-        session.commit()
+    count = ingest.ingest_and_commit()
     print(f"ingested {count} meeting(s) into postgres")
 
 

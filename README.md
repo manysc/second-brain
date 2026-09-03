@@ -36,12 +36,34 @@ pip install -r requirements.txt
 | `S3_ENDPOINT_URL` | SeaweedFS S3 gateway URL (required) | `http://localhost:8334` |
 | `S3_REGION` | Arbitrary region (SeaweedFS doesn't validate it) | `us-east-1` |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Must match an identity in the `seaweedfs` compose service's config | `second_brain` / `second_brain_dev_secret` |
+| `INGEST_ON_STARTUP` | Ingest all S3 extraction files into Postgres every time the backend starts (set `false` to skip, e.g. for tests/CI without S3 configured) | `true` |
 
 Bootstrap the bucket with the sample extraction files (also reads `backend/.env` if run from `backend/`, or pass the same env vars manually):
 
 ```bash
 python scripts/seed_seaweedfs.py
 ```
+
+### When extracts are processed
+
+Uploading a file to the bucket does not, by itself, make it show up in the app — it needs to be
+ingested (`backend/app/ingest.py`) into Postgres first. Ingestion now runs automatically every time
+the backend starts (in the FastAPI `lifespan` hook in `backend/app/main.py`, gated by
+`INGEST_ON_STARTUP`), so restarting the server is enough to pick up new or changed extraction files.
+If SeaweedFS or Postgres is unreachable at startup, the failure is logged and the API still starts,
+serving whatever was already ingested. To re-ingest without restarting the server (or to disable the
+startup hook in `INGEST_ON_STARTUP=false` environments), run the same logic manually:
+
+```bash
+python scripts/ingest_to_postgres.py
+```
+
+Both paths call the same `ingest.ingest_and_commit()`, which lists every object under `S3_PREFIX` in
+the bucket, parses each as a meeting extraction, embeds each `KnowledgeItem` description, and upserts
+meetings/items/topics/review candidates into Postgres. There is still no file watcher or webhook —
+ingestion only happens on backend startup or when the script is run explicitly. Re-running it is safe
+and idempotent: rows are keyed by the normalized `meeting_id:candidate_id` identity and upserted
+(`ON CONFLICT DO UPDATE`), and a human's review decision (`status`) is never clobbered by a re-ingest.
 
 ## Semantic embeddings (sentence-transformers)
 

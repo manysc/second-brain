@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app import embeddings, s3_store
+from app import db, embeddings, s3_store
 from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
 from app.models import (
     Confidence,
@@ -240,4 +240,13 @@ def ingest_all_from_s3(session: Session) -> int:
         meeting = parse_meeting_from_s3(key)
         upsert_meeting(session, meeting)
         count += 1
+    return count
+
+
+def ingest_and_commit() -> int:
+    """Opens a session, ingests everything from S3, and commits. Shared by the FastAPI startup
+    hook and the manual scripts/ingest_to_postgres.py CLI entrypoint."""
+    with db.get_session() as session:
+        count = ingest_all_from_s3(session)
+        session.commit()
     return count
