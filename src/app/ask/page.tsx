@@ -2,12 +2,42 @@ import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { KnowledgeCard } from "@/components/KnowledgeCard";
 import { searchItems } from "@/lib/api";
+import type { KnowledgeItem } from "@/lib/domain";
 
 const PROMPTS = [
   "What should I follow up on?",
   "What changed about Shift Plan?",
   "What unanswered questions keep recurring?",
 ];
+
+// Mirrors the topics/[id] detail page's ideas/questions/decisions/actions column layout.
+function ItemColumns({ items }: { items: KnowledgeItem[] }) {
+  const ideas = items.filter((i) => i.type === "IDEA");
+  const questions = items.filter((i) => i.type === "QUESTION");
+  const decisions = items.filter((i) => i.type === "DECISION");
+  const actions = items.filter((i) => i.type === "ACTION");
+
+  return (
+    <div className="topic-columns">
+      <section>
+        <div className="section-heading"><div><p className="eyebrow">Emerging thinking</p><h2>Ideas</h2></div></div>
+        {ideas.length ? ideas.map((i) => <div key={i.id}><KnowledgeCard item={i} /></div>) : <p className="empty">No matching ideas.</p>}
+      </section>
+      <section>
+        <div className="section-heading"><div><p className="eyebrow">Open edges</p><h2>Questions</h2></div></div>
+        {questions.length ? questions.map((i) => <div key={i.id}><KnowledgeCard item={i} /></div>) : <p className="empty">No matching questions.</p>}
+      </section>
+      <section>
+        <div className="section-heading"><div><p className="eyebrow">Direction set</p><h2>Decisions</h2></div></div>
+        {decisions.length ? decisions.map((i) => <div key={i.id}><KnowledgeCard item={i} /></div>) : <p className="empty">No matching decisions.</p>}
+      </section>
+      <section>
+        <div className="section-heading"><div><p className="eyebrow">Work in motion</p><h2>Actions</h2></div></div>
+        {actions.length ? actions.map((i) => <div key={i.id}><KnowledgeCard item={i} /></div>) : <p className="empty">No matching actions.</p>}
+      </section>
+    </div>
+  );
+}
 
 export default async function Ask({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const query = ((await searchParams).q ?? "").trim();
@@ -37,21 +67,13 @@ export default async function Ask({ searchParams }: { searchParams: Promise<{ q?
                 {topics.map((topic) => (
                   <div key={topic.id} className="topic-result">
                     <h3><Link href={`/topics/${topic.id}`}>{topic.name}</Link> <span>({topic.items.length})</span></h3>
-                    <div className="card-grid">
-                      {topic.items.map((item) => <KnowledgeCard key={item.id} item={item} />)}
-                    </div>
+                    <ItemColumns items={topic.items} />
                   </div>
                 ))}
               </div>
             )}
             <p className="eyebrow">Matching items</p>
-            {items.length ? (
-              <div className="card-grid">
-                {items.map((item) => <KnowledgeCard key={item.id} item={item} />)}
-              </div>
-            ) : (
-              <p>No matching items found.</p>
-            )}
+            {items.length ? <ItemColumns items={items} /> : <p>No matching items found.</p>}
           </section>
         )}
       </div>
