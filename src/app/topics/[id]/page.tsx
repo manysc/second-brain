@@ -2,8 +2,9 @@ import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { KnowledgeCard } from "@/components/KnowledgeCard";
 import { TopicAssignmentForm } from "@/components/TopicAssignmentForm";
-import { getTopicById, getTopics } from "@/lib/api";
+import { getMeetings, getTopicById, getTopics } from "@/lib/api";
 import { deleteTopicAction, updateTopicAction } from "@/lib/actions";
+import type { KnowledgeItem } from "@/lib/domain";
 
 export default async function TopicDetail({
   params,
@@ -13,11 +14,28 @@ export default async function TopicDetail({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
-  const [topic, topics, error] = await Promise.all([getTopicById(id), getTopics(), (await searchParams).error]);
-  const ideas = topic.items.filter((i) => i.type === "IDEA");
-  const decisions = topic.items.filter((i) => i.type === "DECISION");
-  const actions = topic.items.filter((i) => i.type === "ACTION");
-  const questions = topic.items.filter((i) => i.type === "QUESTION");
+  const [topic, topics, meetings, error] = await Promise.all([
+    getTopicById(id),
+    getTopics(),
+    getMeetings(),
+    (await searchParams).error,
+  ]);
+  const meetingDateById = new Map(meetings.map((m) => [m.id, m.date]));
+  // Items only carry a meetingId, so recency is derived from the parent meeting's date.
+  function sortByMeetingDateDesc(items: KnowledgeItem[]) {
+    return [...items].sort((a, b) => {
+      const dateA = meetingDateById.get(a.meetingId);
+      const dateB = meetingDateById.get(b.meetingId);
+      if (!dateA && !dateB) return 0;
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      return dateB.localeCompare(dateA);
+    });
+  }
+  const ideas = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "IDEA"));
+  const decisions = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "DECISION"));
+  const actions = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "ACTION"));
+  const questions = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "QUESTION"));
 
   return (
     <AppShell>
