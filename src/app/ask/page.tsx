@@ -1,4 +1,60 @@
-"use client";
-import { useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
-export default function Ask() { const [query,setQuery]=useState(""); const [asked,setAsked]=useState(false); return <AppShell><div className="ask-page"><p className="eyebrow">Ask my brain / Local retrieval</p><h1>What do you need to know?</h1><p className="lede">Ask across meetings, topics, relationships and evidence. The development provider returns only stored facts.</p><div className="ask-box"><textarea value={query} onChange={e=>setQuery(e.target.value)} placeholder="What should I follow up on?" aria-label="Question" /><button onClick={()=>setAsked(true)}>Ask <span>↗</span></button></div><div className="prompt-row"><button onClick={()=>setQuery("What should I follow up on?")}>What should I follow up on?</button><button onClick={()=>setQuery("What decisions were made about Shift Plan?")}>What changed about Shift Plan?</button><button onClick={()=>setQuery("What unanswered questions keep recurring?")}>What remains unresolved?</button></div>{asked && <section className="answer"><p className="eyebrow">Answer / evidence-backed</p><h2>{query || "Your current follow-ups"}</h2><p>{query.toLowerCase().includes("decision") ? "The stored meeting contains five active decisions. The clearest Shift Plan direction is D-001: implement Step 1 as a tab inside Short-Term Planning, with KPI and promotion changes deferred." : "The current evidence set contains 10 open actions and 7 unresolved questions. Start with the release path: A-009 has a recorded due date of 2026-08-25; A-010's date remains unresolved because its source references conflict."}</p><span className="evidence-link">Sources: D-001 · D-004 · A-009</span></section>}</div></AppShell>; }
+import { KnowledgeCard } from "@/components/KnowledgeCard";
+import { searchItems } from "@/lib/api";
+
+const PROMPTS = [
+  "What should I follow up on?",
+  "What changed about Shift Plan?",
+  "What unanswered questions keep recurring?",
+];
+
+export default async function Ask({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const query = ((await searchParams).q ?? "").trim();
+  const { items, topics } = query ? await searchItems(query) : { items: [], topics: [] };
+
+  return (
+    <AppShell>
+      <div className="ask-page">
+        <p className="eyebrow">Ask my brain / Local retrieval</p>
+        <h1>What do you need to know?</h1>
+        <p className="lede">Search across meetings, topics, relationships and evidence for the closest matching facts.</p>
+        <form className="ask-box" action="/ask">
+          <textarea name="q" defaultValue={query} placeholder="What should I follow up on?" aria-label="Question" />
+          <button type="submit">Ask <span>↗</span></button>
+        </form>
+        <div className="prompt-row">
+          {PROMPTS.map((prompt) => (
+            <a key={prompt} href={`/ask?q=${encodeURIComponent(prompt)}`}>{prompt}</a>
+          ))}
+        </div>
+        {query && (
+          <section className="answer">
+            <p className="eyebrow">Results / evidence-backed</p>
+            <h2>{query}</h2>
+            {topics.length > 0 && (
+              <div className="topic-results">
+                {topics.map((topic) => (
+                  <div key={topic.id} className="topic-result">
+                    <h3><Link href={`/topics/${topic.id}`}>{topic.name}</Link> <span>({topic.items.length})</span></h3>
+                    <div className="card-grid">
+                      {topic.items.map((item) => <KnowledgeCard key={item.id} item={item} />)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="eyebrow">Matching items</p>
+            {items.length ? (
+              <div className="card-grid">
+                {items.map((item) => <KnowledgeCard key={item.id} item={item} />)}
+              </div>
+            ) : (
+              <p>No matching items found.</p>
+            )}
+          </section>
+        )}
+      </div>
+    </AppShell>
+  );
+}

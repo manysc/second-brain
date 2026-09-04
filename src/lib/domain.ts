@@ -43,6 +43,12 @@ export type Topic = {
   stakeholders: string[];
 };
 
+export type SearchResult = {
+  items: KnowledgeItem[];
+  // topics owning at least one matched item, each carrying its full item list
+  topics: Topic[];
+};
+
 export type TopicMergeSuggestion = {
   topicA: Topic;
   topicB: Topic;

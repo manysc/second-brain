@@ -19,6 +19,7 @@ from app.models import (
     Meeting,
     ReviewCandidate,
     ReviewStatusUpdate,
+    SearchResult,
     Topic,
     TopicCreate,
     TopicMerge,
@@ -82,6 +83,12 @@ def get_items(item_type: ItemType | None = Query(default=None, alias="type")) ->
     if item_type is None:
         return items
     return [item for item in items if item.type == item_type]
+
+
+@app.get("/api/search", response_model=SearchResult)
+def search_items(q: str = Query(..., min_length=1, description="Free-text search query")) -> SearchResult:
+    items, topics = data.search(q)
+    return SearchResult(items=items, topics=topics)
 
 
 @app.get("/api/items/{item_id}", response_model=ItemDetail)

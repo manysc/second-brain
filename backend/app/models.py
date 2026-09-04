@@ -99,6 +99,12 @@ class ItemDetail(CamelModel):
     similar: list[KnowledgeItem] = Field(default_factory=list)
 
 
+class SearchResult(CamelModel):
+    items: list[KnowledgeItem]
+    # topics owning at least one matched item, each carrying its full item list (not just the match)
+    topics: list[Topic]
+
+
 # --- Raw extraction file shape (mirrors the zod schemas previously in src/lib/data.ts) ---
 
 

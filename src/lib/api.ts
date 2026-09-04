@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { ItemType, KnowledgeItem, Meeting, ReviewCandidate, Topic, TopicMergeSuggestion } from "./domain";
+import type { ItemType, KnowledgeItem, Meeting, ReviewCandidate, SearchResult, Topic, TopicMergeSuggestion } from "./domain";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 
@@ -42,6 +42,10 @@ export function getItems(type?: ItemType): Promise<KnowledgeItem[]> {
 
 export function getItem(id: string): Promise<{ item: KnowledgeItem; related: KnowledgeItem[] }> {
   return apiFetch(`/api/items/${encodeURIComponent(id)}`);
+}
+
+export function searchItems(query: string): Promise<SearchResult> {
+  return apiFetch<SearchResult>(`/api/search?q=${encodeURIComponent(query)}`);
 }
 
 export function getTopics(): Promise<Topic[]> {

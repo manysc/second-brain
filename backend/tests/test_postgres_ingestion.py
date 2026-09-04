@@ -90,6 +90,23 @@ def test_semantic_similar_items_excludes_self_and_respects_limit(seeded_meetings
     assert all(candidate.id != item.id for candidate in similar)
 
 
+def test_search_returns_closest_matches_and_related_topics(seeded_meetings):
+    meetings = data.load_meetings()
+    item = data.all_items(meetings)[0]
+    items, topics = data.search(item.description, limit=3)
+    assert len(items) <= 3
+    assert all(isinstance(candidate, type(item)) for candidate in items)
+    assert item.id in {candidate.id for candidate in items}
+    # results are ranked confidence-first (HIGH before MEDIUM before LOW)
+    confidence_rank = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+    ranks = [confidence_rank[candidate.confidence] for candidate in items]
+    assert ranks == sorted(ranks)
+    # each returned topic must own at least one of the matched items, not just an unrelated one
+    matched_item_ids = {candidate.id for candidate in items}
+    for topic in topics:
+        assert any(topic_item.id in matched_item_ids for topic_item in topic.items)
+
+
 def test_ingestion_is_idempotent(seeded_meetings):
     with db.get_session() as session:
         before = len(session.execute(select(KnowledgeItemRow)).scalars().all())

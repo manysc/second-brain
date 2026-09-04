@@ -15,6 +15,9 @@ from app.models import Evidence, ItemType, KnowledgeItem, Meeting, ReviewCandida
 # accepted review candidate is treated as a duplicate of an existing item rather than promoted
 DUPLICATE_MATCH_THRESHOLD = 0.2
 
+# search() ranks HIGH-confidence items first, ties broken by semantic distance
+_CONFIDENCE_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+
 
 class TopicNameConflict(Exception):
     """Raised when creating/renaming a topic to a name that's already taken."""
@@ -373,4 +376,34 @@ def semantic_similar_items(item: KnowledgeItem, limit: int = 5) -> list[Knowledg
         )
         rows = session.execute(stmt).scalars().all()
         return [_item_from_row(row) for row in rows]
+
+
+def search(query: str, limit: int = 20) -> tuple[list[KnowledgeItem], list[Topic]]:
+    """Free-text search: finds the `limit` nearest items by pgvector cosine distance, then
+    ranks that candidate set by confidence (HIGH first), using distance as a tiebreak - plus the
+    topics that own them, each topic carrying all of its items, not just the match."""
+    vector = embeddings.embed_text(query)
+    with db.get_session() as session:
+        distance = KnowledgeItemRow.embedding.cosine_distance(vector)
+        stmt = (
+            select(KnowledgeItemRow, distance.label("distance"))
+            .order_by(distance)
+            .limit(limit)
+        )
+        rows_with_distance = session.execute(stmt).all()
+        rows_with_distance.sort(key=lambda pair: (_CONFIDENCE_RANK.get(pair[0].confidence, 99), pair[1]))
+        rows = [row for row, _ in rows_with_distance]
+        items = [_item_from_row(row) for row in rows]
+
+        topic_ids = list(dict.fromkeys(row.topic_id for row in rows if row.topic_id is not None))
+        topics: list[Topic] = []
+        if topic_ids:
+            topic_stmt = (
+                select(TopicRow).where(TopicRow.id.in_(topic_ids)).options(selectinload(TopicRow.items))
+            )
+            topic_rows = session.execute(topic_stmt).scalars().all()
+            topics_by_id = {row.id: _topic_from_row(row) for row in topic_rows}
+            topics = [topics_by_id[tid] for tid in topic_ids if tid in topics_by_id]
+
+    return items, topics
 
