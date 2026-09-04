@@ -40,9 +40,12 @@ def test_create_update_delete_empty_topic(db_ready):
 
 def test_create_topic_rejects_duplicate_name(db_ready):
     name = _unique_name("topic")
-    data.create_topic(name)
-    with pytest.raises(data.TopicNameConflict):
-        data.create_topic(name)
+    created = data.create_topic(name)
+    try:
+        with pytest.raises(data.TopicNameConflict):
+            data.create_topic(name)
+    finally:
+        data.delete_topic(created.id)
 
 
 def test_delete_topic_blocked_when_items_assigned(db_ready):
