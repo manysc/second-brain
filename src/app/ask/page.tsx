@@ -42,6 +42,9 @@ function ItemColumns({ items }: { items: KnowledgeItem[] }) {
 export default async function Ask({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const query = ((await searchParams).q ?? "").trim();
   const { items, topics } = query ? await searchItems(query) : { items: [], topics: [] };
+  // avoid showing the same item twice: once under its topic, once again in the flat list below
+  const topicItemIds = new Set(topics.flatMap((topic) => topic.items.map((item) => item.id)));
+  const itemsWithoutTopic = items.filter((item) => !topicItemIds.has(item.id));
 
   return (
     <AppShell>
@@ -73,7 +76,7 @@ export default async function Ask({ searchParams }: { searchParams: Promise<{ q?
               </div>
             )}
             <p className="eyebrow">Matching items</p>
-            {items.length ? <ItemColumns items={items} /> : <p>No matching items found.</p>}
+            {itemsWithoutTopic.length ? <ItemColumns items={itemsWithoutTopic} /> : <p>No additional matching items found.</p>}
           </section>
         )}
       </div>
