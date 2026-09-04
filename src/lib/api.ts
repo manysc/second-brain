@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { ItemType, KnowledgeItem, Meeting, ReviewCandidate, SearchResult, Topic, TopicMergeSuggestion } from "./domain";
+import type { GraphData, ItemType, KnowledgeItem, Meeting, ReviewCandidate, SearchResult, Topic, TopicMergeSuggestion } from "./domain";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 
@@ -50,6 +50,12 @@ export function searchItems(query: string): Promise<SearchResult> {
 
 export function getTopics(): Promise<Topic[]> {
   return apiFetch<Topic[]>("/api/topics");
+}
+
+export function getGraph(minSimilarity?: number): Promise<GraphData> {
+  return apiFetch<GraphData>(
+    minSimilarity !== undefined ? `/api/graph?minSimilarity=${minSimilarity}` : "/api/graph"
+  );
 }
 
 export function getSuggestedTopicMerges(): Promise<TopicMergeSuggestion[]> {

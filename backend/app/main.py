@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import data, db, ingest
 from app.models import (
+    GraphData,
     ItemDetail,
     ItemTopicUpdate,
     ItemType,
@@ -107,6 +108,11 @@ def get_item(item_id: str) -> ItemDetail:
 @app.get("/api/topics", response_model=list[Topic])
 def get_topics() -> list[Topic]:
     return data.all_topics()
+
+
+@app.get("/api/graph", response_model=GraphData)
+def get_graph(min_similarity: float = Query(default=0.35, alias="minSimilarity")) -> GraphData:
+    return data.build_graph(min_similarity)
 
 
 # declared before /api/topics/{topic_id} - otherwise FastAPI would match "suggested-merges" as a topic_id

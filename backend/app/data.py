@@ -1,6 +1,7 @@
 """Queries Postgres for the meeting knowledge base. Ingestion (S3 -> Postgres) lives in app/ingest.py."""
 from __future__ import annotations
 
+import itertools
 import uuid
 
 import numpy as np
@@ -9,7 +10,19 @@ from sqlalchemy.orm import Session, selectinload
 
 from app import db, embeddings
 from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
-from app.models import Evidence, ItemType, KnowledgeItem, Meeting, ReviewCandidate, ReviewStatus, Topic, TopicMergeSuggestion
+from app.models import (
+    Evidence,
+    GraphData,
+    GraphEdge,
+    GraphNode,
+    ItemType,
+    KnowledgeItem,
+    Meeting,
+    ReviewCandidate,
+    ReviewStatus,
+    Topic,
+    TopicMergeSuggestion,
+)
 
 # cosine distance (embeddings are normalized, so 0=identical..~2=opposite) below which an
 # accepted review candidate is treated as a duplicate of an existing item rather than promoted
@@ -406,4 +419,70 @@ def search(query: str, limit: int = 20) -> tuple[list[KnowledgeItem], list[Topic
             topics = [topics_by_id[tid] for tid in topic_ids if tid in topics_by_id]
 
     return items, topics
+
+
+def build_graph(min_semantic_similarity: float = 0.35) -> GraphData:
+    """Computes the full item-to-item graph: nodes are all knowledge items, edges come from three
+    sources layered by confidence - evidence-grounded `related_ids` (certain), shared topic
+    membership (structural), and embedding cosine similarity above `min_semantic_similarity`
+    (a possible-relationship discovery layer, never an assertion). Each pair gets at most one
+    edge, preferring the most-confident kind available for that pair."""
+    with db.get_session() as session:
+        stmt = select(KnowledgeItemRow).options(selectinload(KnowledgeItemRow.topic))
+        rows = session.execute(stmt).scalars().all()
+
+    all_ids = {row.id for row in rows}
+    nodes = [
+        GraphNode(
+            id=row.id,
+            type=row.type,
+            description=row.description,
+            confidence=row.confidence,
+            owner=row.owner,
+            topic_id=row.topic_id,
+            topic_name=row.topic.name if row.topic is not None else None,
+            meeting_id=row.meeting_id,
+        )
+        for row in rows
+    ]
+
+    edges: list[GraphEdge] = []
+    seen_pairs: set[frozenset[str]] = set()
+
+    def _add_edge(a: str, b: str, kind: str, weight: float = 1.0) -> None:
+        pair = frozenset((a, b))
+        if a == b or pair in seen_pairs:
+            return
+        seen_pairs.add(pair)
+        edges.append(GraphEdge(source=a, target=b, kind=kind, weight=weight))
+
+    for row in rows:
+        for raw_id in row.related_ids:
+            target = next(
+                (candidate for candidate in all_ids if candidate.split(":", 1)[-1] == raw_id or candidate == raw_id),
+                None,
+            )
+            if target is not None:
+                _add_edge(row.id, target, "related")
+
+    topic_groups: dict[str, list[str]] = {}
+    for row in rows:
+        if row.topic_id is None or row.topic is None or row.topic.name == "Uncategorized":
+            continue
+        topic_groups.setdefault(row.topic_id, []).append(row.id)
+    for group_ids in topic_groups.values():
+        for a, b in itertools.combinations(sorted(group_ids), 2):
+            _add_edge(a, b, "topic")
+
+    vectors = {row.id: np.array(row.embedding) for row in rows if row.embedding is not None}
+    vector_ids = list(vectors.keys())
+    for i in range(len(vector_ids)):
+        for j in range(i + 1, len(vector_ids)):
+            a, b = vector_ids[i], vector_ids[j]
+            va, vb = vectors[a], vectors[b]
+            similarity = float(np.dot(va, vb) / (np.linalg.norm(va) * np.linalg.norm(vb)))
+            if similarity >= min_semantic_similarity:
+                _add_edge(a, b, "semantic", weight=similarity)
+
+    return GraphData(nodes=nodes, edges=edges)
 

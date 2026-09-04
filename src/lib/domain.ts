@@ -55,6 +55,29 @@ export type TopicMergeSuggestion = {
   similarity: number;
 };
 
+export type GraphNode = {
+  id: string;
+  type: ItemType;
+  description: string;
+  confidence: Confidence;
+  owner: string | null;
+  topicId: string | null;
+  topicName: string | null;
+  meetingId: string;
+};
+
+export type GraphEdge = {
+  source: string;
+  target: string;
+  kind: "related" | "topic" | "semantic";
+  weight: number;
+};
+
+export type GraphData = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+};
+
 export type Meeting = {
   id: string;
   title: string;

@@ -105,6 +105,30 @@ class SearchResult(CamelModel):
     topics: list[Topic]
 
 
+class GraphNode(CamelModel):
+    id: str
+    type: ItemType
+    description: str
+    confidence: Confidence
+    owner: str | None = None
+    topic_id: str | None = Field(default=None, alias="topicId")
+    topic_name: str | None = Field(default=None, alias="topicName")
+    meeting_id: str = Field(alias="meetingId")
+
+
+class GraphEdge(CamelModel):
+    source: str
+    target: str
+    kind: Literal["related", "topic", "semantic"]
+    # 1.0 for related/topic edges; cosine similarity (0-1) for semantic edges
+    weight: float = 1.0
+
+
+class GraphData(CamelModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
 # --- Raw extraction file shape (mirrors the zod schemas previously in src/lib/data.ts) ---
 
 

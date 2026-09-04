@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 const links = [
   ["Command center", "/dashboard"], ["Briefing", "/briefing"], ["Meetings", "/meetings"], ["Topics", "/topics"],
+  ["Graph", "/graph"],
   ["Ideas", "/items?type=IDEA"], ["Decisions", "/decisions"], ["Actions", "/actions"], ["Questions", "/questions"],
   ["Review center", "/review"], ["Growth", "/growth"], ["Ask my brain", "/ask"],
 ];
