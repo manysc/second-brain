@@ -76,6 +76,12 @@ class TopicMerge(CamelModel):
     target_topic_id: str = Field(alias="targetTopicId")
 
 
+class TopicMergeSuggestion(CamelModel):
+    topic_a: Topic = Field(alias="topicA")
+    topic_b: Topic = Field(alias="topicB")
+    similarity: float
+
+
 class Meeting(CamelModel):
     id: str
     title: str

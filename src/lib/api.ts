@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { ItemType, KnowledgeItem, Meeting, ReviewCandidate, Topic } from "./domain";
+import type { ItemType, KnowledgeItem, Meeting, ReviewCandidate, Topic, TopicMergeSuggestion } from "./domain";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 
@@ -46,6 +46,10 @@ export function getItem(id: string): Promise<{ item: KnowledgeItem; related: Kno
 
 export function getTopics(): Promise<Topic[]> {
   return apiFetch<Topic[]>("/api/topics");
+}
+
+export function getSuggestedTopicMerges(): Promise<TopicMergeSuggestion[]> {
+  return apiFetch<TopicMergeSuggestion[]>("/api/topics/suggested-merges");
 }
 
 export async function getTopicById(id: string): Promise<Topic> {

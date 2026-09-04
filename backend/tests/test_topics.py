@@ -147,3 +147,43 @@ def test_merge_topics_rejects_unknown_topic(db_ready):
             data.merge_topics("not-a-real-topic-id", topic.id)
     finally:
         data.delete_topic(topic.id)
+
+
+def test_suggested_topic_merges_flags_similar_topics(db_ready):
+    meetings = data.load_meetings()
+    items = data.all_items(meetings)
+    if len(items) < 2:
+        pytest.skip("need at least 2 seeded knowledge items with embeddings")
+    item_a, item_b = items[0], items[1]
+
+    from app.db_models import KnowledgeItemRow
+
+    with db.get_session() as session:
+        original_a = session.get(KnowledgeItemRow, item_a.id).topic_id
+        original_b = session.get(KnowledgeItemRow, item_b.id).topic_id
+
+    topic_a = data.create_topic(_unique_name("sim-a"))
+    topic_b = data.create_topic(_unique_name("sim-b"))
+    data.assign_item_topic(item_a.id, topic_a.id)
+    data.assign_item_topic(item_b.id, topic_b.id)
+    try:
+        # min_similarity=-1 guarantees the pair is included regardless of actual similarity,
+        # since this only asserts the pair is computed/returned correctly - not a specific score
+        suggestions = data.suggested_topic_merges(min_similarity=-1.0, limit=1000)
+        pair = frozenset((topic_a.id, topic_b.id))
+        match = next((s for s in suggestions if frozenset((s.topic_a.id, s.topic_b.id)) == pair), None)
+        assert match is not None
+        assert -1.0 <= match.similarity <= 1.0
+    finally:
+        data.assign_item_topic(item_a.id, original_a)
+        data.assign_item_topic(item_b.id, original_b)
+        data.delete_topic(topic_a.id)
+        data.delete_topic(topic_b.id)
+
+
+def test_suggested_topic_merges_excludes_uncategorized(db_ready):
+    meetings = data.load_meetings()
+    if not data.all_items(meetings):
+        pytest.skip("no seeded knowledge items available")
+    suggestions = data.suggested_topic_merges(min_similarity=-1.0, limit=1000)
+    assert all(s.topic_a.name != "Uncategorized" and s.topic_b.name != "Uncategorized" for s in suggestions)

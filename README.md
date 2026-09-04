@@ -84,6 +84,21 @@ proxy), `backend/app/embeddings.py` catches the failure and falls back to a dete
 `HashingVectorizer` so the pgvector pipeline still runs end-to-end. It self-upgrades to the real
 model automatically once the download succeeds - no code change or re-ingestion required.
 
+### Hugging Face download troubleshooting
+
+`sentence-transformers` fetches `all-MiniLM-L6-v2` from the Hugging Face Hub on first use and caches
+it under `~/.cache/huggingface`. On a network with a TLS-inspecting proxy (e.g. Zscaler):
+
+- `pip install pip-system-certs` fixes `CERTIFICATE_VERIFY_FAILED` errors by making Python trust the
+  OS certificate store instead of only its bundled CA list.
+- `pip install "huggingface_hub[hf_xet]"` enables the faster `hf_xet` transfer backend, which can
+  succeed where the default HTTP downloader stalls or is blocked; set `HF_HUB_DISABLE_XET=1` to force
+  the legacy backend if `hf_xet` itself is the one being blocked.
+- Some proxies block only the CDN subdomain that serves the actual model weights (`huggingface.co`
+  itself and small config/JSON files still resolve fine). If the download still fails after the above,
+  it's likely a network policy block rather than a client-side bug - the offline `HashingVectorizer`
+  fallback above keeps everything else working until it's unblocked.
+
 ## Architecture
 
 ```mermaid

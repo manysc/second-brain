@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import uuid
 
+import numpy as np
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app import db, embeddings
 from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
-from app.models import Evidence, ItemType, KnowledgeItem, Meeting, ReviewCandidate, ReviewStatus, Topic
+from app.models import Evidence, ItemType, KnowledgeItem, Meeting, ReviewCandidate, ReviewStatus, Topic, TopicMergeSuggestion
 
 # cosine distance (embeddings are normalized, so 0=identical..~2=opposite) below which an
 # accepted review candidate is treated as a duplicate of an existing item rather than promoted
@@ -315,6 +316,36 @@ def merge_topics(source_topic_id: str, target_topic_id: str) -> Topic:
     merged = get_topic_by_id(target_topic_id)
     assert merged is not None
     return merged
+
+
+def suggested_topic_merges(min_similarity: float = 0.5, limit: int = 10) -> list[TopicMergeSuggestion]:
+    """Flags pairs of topics whose items are semantically close on average, for a human to review
+    and merge - never merges automatically. Excludes "Uncategorized" (a heterogeneous catch-all
+    with its own dedicated drag-to-merge flow) and topics with no embedded items."""
+    with db.get_session() as session:
+        stmt = select(TopicRow).options(selectinload(TopicRow.items))
+        rows = [row for row in session.execute(stmt).scalars().all() if row.name != "Uncategorized"]
+        topics_by_id = {row.id: _topic_from_row(row) for row in rows}
+        vectors: dict[str, np.ndarray] = {}
+        for row in rows:
+            item_vectors = [np.array(item.embedding) for item in row.items if item.embedding is not None]
+            if item_vectors:
+                vectors[row.id] = np.mean(item_vectors, axis=0)
+
+    suggestions: list[TopicMergeSuggestion] = []
+    ids = list(vectors.keys())
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            a, b = vectors[ids[i]], vectors[ids[j]]
+            similarity = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+            if similarity >= min_similarity:
+                suggestions.append(
+                    TopicMergeSuggestion(
+                        topic_a=topics_by_id[ids[i]], topic_b=topics_by_id[ids[j]], similarity=similarity
+                    )
+                )
+    suggestions.sort(key=lambda s: s.similarity, reverse=True)
+    return suggestions[:limit]
 
 
 def related_items(item: KnowledgeItem, meetings: list[Meeting]) -> list[KnowledgeItem]:

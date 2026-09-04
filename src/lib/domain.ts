@@ -43,6 +43,12 @@ export type Topic = {
   stakeholders: string[];
 };
 
+export type TopicMergeSuggestion = {
+  topicA: Topic;
+  topicB: Topic;
+  similarity: number;
+};
+
 export type Meeting = {
   id: string;
   title: string;

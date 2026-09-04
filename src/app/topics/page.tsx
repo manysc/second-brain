@@ -1,11 +1,15 @@
 import { AppShell } from "@/components/AppShell";
 import { TopicGrid } from "@/components/TopicGrid";
-import { getTopics } from "@/lib/api";
+import { SuggestedTopicMerges } from "@/components/SuggestedTopicMerges";
+import { getSuggestedTopicMerges, getTopics } from "@/lib/api";
 import { createTopicAction } from "@/lib/actions";
 
 export default async function Topics({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const topics = await getTopics();
-  const error = (await searchParams).error;
+  const [topics, suggestions, error] = await Promise.all([
+    getTopics(),
+    getSuggestedTopicMerges(),
+    (await searchParams).error,
+  ]);
 
   return (
     <AppShell>
@@ -21,6 +25,7 @@ export default async function Topics({ searchParams }: { searchParams: Promise<{
         <input name="name" placeholder="New topic name" required />
         <button>Create topic</button>
       </form>
+      <SuggestedTopicMerges suggestions={suggestions} />
       <TopicGrid topics={topics} />
     </AppShell>
   );

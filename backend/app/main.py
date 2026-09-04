@@ -22,6 +22,7 @@ from app.models import (
     Topic,
     TopicCreate,
     TopicMerge,
+    TopicMergeSuggestion,
     TopicUpdate,
 )
 
@@ -99,6 +100,12 @@ def get_item(item_id: str) -> ItemDetail:
 @app.get("/api/topics", response_model=list[Topic])
 def get_topics() -> list[Topic]:
     return data.all_topics()
+
+
+# declared before /api/topics/{topic_id} - otherwise FastAPI would match "suggested-merges" as a topic_id
+@app.get("/api/topics/suggested-merges", response_model=list[TopicMergeSuggestion])
+def get_suggested_topic_merges() -> list[TopicMergeSuggestion]:
+    return data.suggested_topic_merges()
 
 
 @app.get("/api/topics/{topic_id}", response_model=Topic)
