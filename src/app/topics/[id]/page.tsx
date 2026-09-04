@@ -14,6 +14,7 @@ export default async function TopicDetail({
 }) {
   const { id } = await params;
   const [topic, topics, error] = await Promise.all([getTopicById(id), getTopics(), (await searchParams).error]);
+  const ideas = topic.items.filter((i) => i.type === "IDEA");
   const decisions = topic.items.filter((i) => i.type === "DECISION");
   const actions = topic.items.filter((i) => i.type === "ACTION");
   const questions = topic.items.filter((i) => i.type === "QUESTION");
@@ -50,8 +51,8 @@ export default async function TopicDetail({
         <p className="eyebrow">Current situation</p>
         <h2>{topic.items[0]?.description ?? "No items assigned yet"}</h2>
         <p>
-          Known: this thread connects to {decisions.length} decisions, {actions.length} actions and{" "}
-          {questions.length} unresolved questions. Inferred synthesis is intentionally conservative until more
+          Known: this thread connects to {ideas.length} ideas, {decisions.length} decisions, {actions.length} actions
+          and {questions.length} unresolved questions. Inferred synthesis is intentionally conservative until more
           meetings arrive.
         </p>
         {topic.items[0] ? (
@@ -66,6 +67,24 @@ export default async function TopicDetail({
         ) : null}
       </section>
       <div className="topic-columns">
+        <section>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Emerging thinking</p>
+              <h2>Ideas</h2>
+            </div>
+          </div>
+          {ideas.length ? (
+            ideas.map((i) => (
+              <div key={i.id}>
+                <KnowledgeCard item={i} />
+                <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+              </div>
+            ))
+          ) : (
+            <p className="empty">No ideas recorded yet.</p>
+          )}
+        </section>
         <section>
           <div className="section-heading">
             <div>
@@ -87,19 +106,37 @@ export default async function TopicDetail({
         <section>
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Direction and work</p>
-              <h2>Decisions & actions</h2>
+              <p className="eyebrow">Direction set</p>
+              <h2>Decisions</h2>
             </div>
           </div>
-          {[...decisions, ...actions].length ? (
-            [...decisions, ...actions].map((i) => (
+          {decisions.length ? (
+            decisions.map((i) => (
               <div key={i.id}>
                 <KnowledgeCard item={i} />
                 <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
               </div>
             ))
           ) : (
-            <p className="empty">No decisions or actions recorded.</p>
+            <p className="empty">No decisions recorded.</p>
+          )}
+        </section>
+        <section>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Work in motion</p>
+              <h2>Actions</h2>
+            </div>
+          </div>
+          {actions.length ? (
+            actions.map((i) => (
+              <div key={i.id}>
+                <KnowledgeCard item={i} />
+                <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+              </div>
+            ))
+          ) : (
+            <p className="empty">No actions recorded.</p>
           )}
         </section>
       </div>
