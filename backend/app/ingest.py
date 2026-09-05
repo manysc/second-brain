@@ -152,8 +152,16 @@ def upsert_meeting(session: Session, meeting: Meeting) -> None:
     if meeting.items:
         item_vectors = embeddings.embed_texts([item.description for item in meeting.items])
         topic_cache: dict[str, str] = {}
+        existing_ids = {
+            row_id
+            for (row_id,) in session.execute(
+                select(KnowledgeItemRow.id).where(KnowledgeItemRow.id.in_([item.id for item in meeting.items]))
+            )
+        }
         for item, vector in zip(meeting.items, item_vectors):
-            topic_id = _resolve_topic_id(session, item.theme, topic_cache)
+            # only resolve/create a topic for genuinely new items - re-ingesting an item that
+            # already exists must never resurrect a topic the user deliberately deleted
+            topic_id = None if item.id in existing_ids else _resolve_topic_id(session, item.theme, topic_cache)
             item_stmt = pg_insert(KnowledgeItemRow).values(
                 id=item.id,
                 meeting_id=meeting.id,
