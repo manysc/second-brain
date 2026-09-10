@@ -64,6 +64,12 @@ meetings/items/topics/review candidates into Postgres. There is still no file wa
 ingestion only happens on backend startup or when the script is run explicitly. Re-running it is safe
 and idempotent: rows are keyed by the normalized `meeting_id:candidate_id` identity and upserted
 (`ON CONFLICT DO UPDATE`), and a human's review decision (`status`) is never clobbered by a re-ingest.
+A knowledge item's `topic_id` is likewise only assigned the first time that identity is seen, so
+re-ingesting an unchanged file never resurrects a topic the user manually reassigned or deleted the
+item from. Different files never dedupe against each other purely by content: two candidates only
+collapse into one row if they resolve to the same `meeting_id:candidate_id`; otherwise similar or
+duplicate-sounding items across meetings stay as separate rows, linked only loosely after the fact via
+the embedding-based "similar items" and topic-merge-suggestion features described below.
 
 ## Semantic embeddings (sentence-transformers)
 
