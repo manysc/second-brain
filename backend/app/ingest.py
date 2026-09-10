@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app import db, embeddings, s3_store
+from app.data import DUPLICATE_MATCH_THRESHOLD
 from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
 from app.models import (
     Confidence,
@@ -38,12 +39,17 @@ def _normalize_evidence(raw: RawEvidence) -> Evidence:
     return Evidence(speaker=raw.speaker, timestamp=raw.timestamp, quote=raw.quote, context=raw.context)
 
 
-def _normalize_item(candidate: RawCandidate, item_type: ItemType, meeting_id: str) -> KnowledgeItem:
+def _item_id_prefix(meeting_id: str, variant: str) -> str:
+    # variant namespaces ids so two LLM extracts of the same meeting never collide on candidate_id
+    return f"{meeting_id}:{variant}" if variant else meeting_id
+
+
+def _normalize_item(candidate: RawCandidate, item_type: ItemType, meeting_id: str, variant: str) -> KnowledgeItem:
     owner = candidate.owner or candidate.proposed_by or candidate.decision_owner
     speaker = candidate.evidence.speaker
     stakeholders = list(dict.fromkeys(value for value in (owner, speaker) if value))
     return KnowledgeItem(
-        id=f"{meeting_id}:{candidate.candidate_id}",
+        id=f"{_item_id_prefix(meeting_id, variant)}:{candidate.candidate_id}",
         type=item_type,
         description=candidate.description,
         theme=candidate.theme,
@@ -68,24 +74,30 @@ def _repair_json(text: str) -> dict:
     return json.loads(repaired)
 
 
-def _derive_meeting_id(key: str) -> str:
+def _derive_meeting_identity(key: str) -> tuple[str, str]:
     # the extraction JSON's own meeting_id is sometimes blank or duplicated across files;
-    # the S3 key is always unique, so it's the source of truth for id-namespacing
+    # the S3 key is always unique, so it's the source of truth for id-namespacing.
+    # "<meeting-key>--<variant>.json" lets two different LLM extracts of the same meeting
+    # (e.g. "standup--gpt4.json" / "standup--claude.json") share one canonical meeting_id.
+    # Split before sanitizing so sanitization can't accidentally manufacture a "--".
     stem = Path(key).stem
-    return re.sub(r"[^A-Za-z0-9_-]", "-", stem)
+    meeting_part, sep, variant_part = stem.partition("--")
+    meeting_id = re.sub(r"[^A-Za-z0-9_-]", "-", meeting_part)
+    variant = re.sub(r"[^A-Za-z0-9_-]", "-", variant_part) if sep else ""
+    return meeting_id, variant
 
 
-def _normalize_extraction(parsed: RawExtraction, meeting_id: str) -> Meeting:
+def _normalize_extraction(parsed: RawExtraction, meeting_id: str, variant: str) -> Meeting:
     items = [
-        *(_normalize_item(c, "IDEA", meeting_id) for c in parsed.ideas),
-        *(_normalize_item(c, "DECISION", meeting_id) for c in parsed.decisions),
-        *(_normalize_item(c, "ACTION", meeting_id) for c in parsed.actions),
-        *(_normalize_item(c, "QUESTION", meeting_id) for c in parsed.questions),
+        *(_normalize_item(c, "IDEA", meeting_id, variant) for c in parsed.ideas),
+        *(_normalize_item(c, "DECISION", meeting_id, variant) for c in parsed.decisions),
+        *(_normalize_item(c, "ACTION", meeting_id, variant) for c in parsed.actions),
+        *(_normalize_item(c, "QUESTION", meeting_id, variant) for c in parsed.questions),
     ]
 
     review_candidates = [
         ReviewCandidate(
-            id=f"{meeting_id}:review-{index + 1}",
+            id=f"{_item_id_prefix(meeting_id, variant)}:review-{index + 1}",
             type=candidate.candidate_type,
             description=candidate.description,
             reason=candidate.reason_for_review,
@@ -123,7 +135,8 @@ def _normalize_extraction(parsed: RawExtraction, meeting_id: str) -> Meeting:
 
 def parse_meeting_from_s3(key: str) -> Meeting:
     parsed = RawExtraction.model_validate(_repair_json(s3_store.fetch_object_text(key)))
-    return _normalize_extraction(parsed, _derive_meeting_id(key))
+    meeting_id, variant = _derive_meeting_identity(key)
+    return _normalize_extraction(parsed, meeting_id, variant)
 
 
 def _resolve_topic_id(session: Session, theme: str | None, cache: dict[str, str]) -> str:
@@ -137,6 +150,23 @@ def _resolve_topic_id(session: Session, theme: str | None, cache: dict[str, str]
         session.flush()
     cache[name] = topic_id
     return topic_id
+
+
+def _find_similar_item_in_meeting(session: Session, meeting_id: str, embedding: list[float]) -> KnowledgeItemRow | None:
+    # scoped to one meeting so two LLM extracts of the same meeting merge, without risking
+    # false merges against unrelated meetings the way a global similarity search would
+    distance_expr = KnowledgeItemRow.embedding.cosine_distance(embedding)
+    stmt = (
+        select(KnowledgeItemRow, distance_expr)
+        .where(KnowledgeItemRow.meeting_id == meeting_id, KnowledgeItemRow.embedding.is_not(None))
+        .order_by(distance_expr)
+        .limit(1)
+    )
+    result = session.execute(stmt).first()
+    if result is None:
+        return None
+    row, distance = result
+    return row if distance < DUPLICATE_MATCH_THRESHOLD else None
 
 
 def upsert_meeting(session: Session, meeting: Meeting) -> None:
@@ -159,6 +189,13 @@ def upsert_meeting(session: Session, meeting: Meeting) -> None:
             )
         }
         for item, vector in zip(meeting.items, item_vectors):
+            if item.id not in existing_ids:
+                duplicate = _find_similar_item_in_meeting(session, meeting.id, vector)
+                if duplicate is not None:
+                    # a different LLM's near-duplicate of an item already ingested for this
+                    # meeting - reinforce it instead of inserting a second, duplicate row
+                    duplicate.confidence = "HIGH"
+                    continue
             # only resolve/create a topic for genuinely new items - re-ingesting an item that
             # already exists must never resurrect a topic the user deliberately deleted
             topic_id = None if item.id in existing_ids else _resolve_topic_id(session, item.theme, topic_cache)

@@ -71,6 +71,24 @@ collapse into one row if they resolve to the same `meeting_id:candidate_id`; oth
 duplicate-sounding items across meetings stay as separate rows, linked only loosely after the fact via
 the embedding-based "similar items" and topic-merge-suggestion features described below.
 
+#### Ingesting the same meeting from multiple LLM extracts
+
+Two different LLMs (or two runs) sometimes each produce their own extraction file for the *same*
+meeting. Name the files `<meeting-key>--<variant>.json` (e.g. `standup-2026-09-08--gpt4.json` and
+`standup-2026-09-08--claude.json`) so `ingest._derive_meeting_identity` recognizes them as one
+canonical meeting: both files upsert into a single `MeetingRow` keyed by `<meeting-key>`, while
+`<variant>` namespaces each file's item/review-candidate ids (`meeting_id:variant:candidate_id`) so
+the two LLMs' independently-numbered candidates never collide. Files without `--` behave exactly as
+before (the whole filename stem is the meeting key). Files that don't share a `<meeting-key>` are
+still treated as unrelated meetings, even if their content is similar.
+
+Within one canonical meeting, a new idea/decision/action/question is compared by embedding cosine
+distance against that meeting's existing items before insert; a close match (same
+`DUPLICATE_MATCH_THRESHOLD` used by the review-accept dedup in `app/data.py`) reinforces the
+existing item's confidence to `HIGH` instead of inserting a duplicate row. This dedup is scoped to
+the one meeting, not global — items that merely *sound* similar across different meetings are left
+alone, same as the paragraph above.
+
 ## Semantic embeddings (sentence-transformers)
 
 Ingestion (`backend/app/ingest.py`) embeds every `KnowledgeItem` description with

@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "meeting": {
+    "meeting_id": "multi-source-sample",
+    "title": "Q4 Planning Sync",
+    "date": "2026-09-08",
+    "source_url": "https://example.com/recordings/multi-source-sample"
+  },
+  "ideas": [],
+  "decisions": [
+    {
+      "candidate_id": "D-001",
+      "type": "Decision",
+      "description": "The team decided to migrate the billing service to the new payment provider by Q4.",
+      "theme": "Billing",
+      "status": "Open",
+      "decision_owner": "Priya",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Priya",
+        "timestamp": "00:04:15",
+        "quote": "We're migrating billing to the new provider by Q4.",
+        "context": "Planning discussion"
+      },
+      "related_candidate_ids": []
+    }
+  ],
+  "actions": [
+    {
+      "candidate_id": "A-001",
+      "type": "Action",
+      "description": "Bob needs to update the disaster recovery runbook documentation this month.",
+      "theme": "Operations",
+      "status": "Open",
+      "owner": "Bob",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Bob",
+        "timestamp": "00:20:05",
+        "quote": "I'll update the DR runbook this month.",
+        "context": "Action item review"
+      },
+      "related_candidate_ids": []
+    }
+  ],
+  "questions": [],
+  "review_candidates": []
+}

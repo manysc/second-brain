@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "meeting": {
+    "meeting_id": "multi-source-sample",
+    "title": "Q4 Planning Sync",
+    "date": "2026-09-08",
+    "source_url": "https://example.com/recordings/multi-source-sample"
+  },
+  "ideas": [],
+  "decisions": [
+    {
+      "candidate_id": "D-001",
+      "type": "Decision",
+      "description": "We decided to migrate the billing service to the new payment provider by Q4.",
+      "theme": "Billing",
+      "status": "Open",
+      "decision_owner": "Priya",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Priya",
+        "timestamp": "00:04:10",
+        "quote": "Let's migrate billing to the new provider by Q4.",
+        "context": "Planning discussion"
+      },
+      "related_candidate_ids": []
+    }
+  ],
+  "actions": [
+    {
+      "candidate_id": "A-001",
+      "type": "Action",
+      "description": "Alice will refactor the onboarding email templates before the next release.",
+      "theme": "Onboarding",
+      "status": "Open",
+      "owner": "Alice",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:12:30",
+        "quote": "I'll refactor the onboarding email templates.",
+        "context": "Action item review"
+      },
+      "related_candidate_ids": []
+    }
+  ],
+  "questions": [],
+  "review_candidates": []
+}
