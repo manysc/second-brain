@@ -2,7 +2,8 @@ import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { KnowledgeCard } from "@/components/KnowledgeCard";
 import { TopicAssignmentForm } from "@/components/TopicAssignmentForm";
-import { getMeetings, getTopicById, getTopics } from "@/lib/api";
+import { SuggestedItemTopics } from "@/components/SuggestedItemTopics";
+import { getMeetings, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
 import { deleteTopicAction, updateTopicAction } from "@/lib/actions";
 import type { KnowledgeItem } from "@/lib/domain";
 
@@ -20,6 +21,7 @@ export default async function TopicDetail({
     getMeetings(),
     (await searchParams).error,
   ]);
+  const suggestions = topic.name === "Uncategorized" ? await getSuggestedItemTopics() : [];
   const meetingDateById = new Map(meetings.map((m) => [m.id, m.date]));
   // Items only carry a meetingId, so recency is derived from the parent meeting's date.
   function sortByMeetingDateDesc(items: KnowledgeItem[]) {
@@ -65,6 +67,7 @@ export default async function TopicDetail({
           </button>
         </form>
       </div>
+      {topic.name === "Uncategorized" ? <SuggestedItemTopics suggestions={suggestions} /> : null}
       <section className="topic-situation">
         <p className="eyebrow">Current situation</p>
         <h2>{topic.items[0]?.description ?? "No items assigned yet"}</h2>

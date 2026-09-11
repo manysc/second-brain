@@ -190,3 +190,53 @@ def test_suggested_topic_merges_excludes_uncategorized(db_ready):
         pytest.skip("no seeded knowledge items available")
     suggestions = data.suggested_topic_merges(min_similarity=-1.0, limit=1000)
     assert all(s.topic_a.name != "Uncategorized" and s.topic_b.name != "Uncategorized" for s in suggestions)
+
+
+def test_suggested_item_topics_flags_similar_topic(db_ready):
+    meetings = data.load_meetings()
+    items = data.all_items(meetings)
+    if len(items) < 2:
+        pytest.skip("need at least 2 seeded knowledge items with embeddings")
+    item_a, item_b = items[0], items[1]
+
+    from app.db_models import KnowledgeItemRow
+
+    with db.get_session() as session:
+        row_a = session.get(KnowledgeItemRow, item_a.id)
+        row_b = session.get(KnowledgeItemRow, item_b.id)
+        if row_a.embedding is None or row_b.embedding is None:
+            pytest.skip("seeded items need embeddings")
+        original_a_topic = row_a.topic_id
+        original_b_topic = row_b.topic_id
+        original_a_embedding = row_a.embedding
+        # force an exact embedding match so topic_a is unambiguously the closest centroid to
+        # item_b (cosine similarity to itself is the global max of 1.0), regardless of whatever
+        # other topics already exist in the shared dev DB
+        row_a.embedding = row_b.embedding
+        uncategorized_id = data._get_or_create_uncategorized_topic(session)
+        session.commit()
+
+    topic_a = data.create_topic(_unique_name("item-sim-a"))
+    data.assign_item_topic(item_a.id, topic_a.id)
+    data.assign_item_topic(item_b.id, uncategorized_id)
+    try:
+        suggestions = data.suggested_item_topics(min_similarity=-1.0, limit=1000)
+        match = next((s for s in suggestions if s.item.id == item_b.id), None)
+        assert match is not None
+        assert match.suggested_topic.id == topic_a.id
+        assert match.similarity == pytest.approx(1.0, abs=1e-4)
+    finally:
+        data.assign_item_topic(item_a.id, original_a_topic)
+        data.assign_item_topic(item_b.id, original_b_topic)
+        with db.get_session() as session:
+            session.get(KnowledgeItemRow, item_a.id).embedding = original_a_embedding
+            session.commit()
+        data.delete_topic(topic_a.id)
+
+
+def test_suggested_item_topics_never_suggests_uncategorized(db_ready):
+    meetings = data.load_meetings()
+    if not data.all_items(meetings):
+        pytest.skip("no seeded knowledge items available")
+    suggestions = data.suggested_item_topics(min_similarity=-1.0, limit=1000)
+    assert all(s.suggested_topic.name != "Uncategorized" for s in suggestions)

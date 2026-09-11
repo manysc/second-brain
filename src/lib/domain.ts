@@ -55,6 +55,12 @@ export type TopicMergeSuggestion = {
   similarity: number;
 };
 
+export type ItemTopicSuggestion = {
+  item: KnowledgeItem;
+  suggestedTopic: Topic;
+  similarity: number;
+};
+
 export type GraphNode = {
   id: string;
   type: ItemType;

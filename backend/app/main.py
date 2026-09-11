@@ -14,6 +14,7 @@ from app import data, db, ingest
 from app.models import (
     GraphData,
     ItemDetail,
+    ItemTopicSuggestion,
     ItemTopicUpdate,
     ItemType,
     KnowledgeItem,
@@ -119,6 +120,12 @@ def get_graph(min_similarity: float = Query(default=0.35, alias="minSimilarity")
 @app.get("/api/topics/suggested-merges", response_model=list[TopicMergeSuggestion])
 def get_suggested_topic_merges() -> list[TopicMergeSuggestion]:
     return data.suggested_topic_merges()
+
+
+# same path-ordering reason as suggested-merges above
+@app.get("/api/topics/suggested-item-topics", response_model=list[ItemTopicSuggestion])
+def get_suggested_item_topics() -> list[ItemTopicSuggestion]:
+    return data.suggested_item_topics()
 
 
 @app.get("/api/topics/{topic_id}", response_model=Topic)

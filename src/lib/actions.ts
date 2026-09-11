@@ -74,6 +74,15 @@ export async function mergeTopicsAction(sourceTopicId: string, targetTopicId: st
   revalidatePath("/topics");
 }
 
+export async function assignItemTopicAction(itemId: string, topicId: string): Promise<void> {
+  try {
+    await moveItemTopic(itemId, topicId);
+  } catch (err) {
+    redirect(`/topics?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath("/topics");
+}
+
 async function decideReviewCandidate(formData: FormData, status: "ACCEPTED" | "REJECTED"): Promise<void> {
   const candidateId = String(formData.get("candidateId") ?? "");
 

@@ -15,6 +15,7 @@ from app.models import (
     GraphData,
     GraphEdge,
     GraphNode,
+    ItemTopicSuggestion,
     ItemType,
     KnowledgeItem,
     Meeting,
@@ -334,6 +335,16 @@ def merge_topics(source_topic_id: str, target_topic_id: str) -> Topic:
     return merged
 
 
+def _topic_centroids(rows: list[TopicRow]) -> dict[str, np.ndarray]:
+    """Mean embedding per topic, skipping topics with no embedded items."""
+    centroids: dict[str, np.ndarray] = {}
+    for row in rows:
+        item_vectors = [np.array(item.embedding) for item in row.items if item.embedding is not None]
+        if item_vectors:
+            centroids[row.id] = np.mean(item_vectors, axis=0)
+    return centroids
+
+
 def suggested_topic_merges(min_similarity: float = 0.5, limit: int = 10) -> list[TopicMergeSuggestion]:
     """Flags pairs of topics whose items are semantically close on average, for a human to review
     and merge - never merges automatically. Excludes "Uncategorized" (a heterogeneous catch-all
@@ -342,11 +353,7 @@ def suggested_topic_merges(min_similarity: float = 0.5, limit: int = 10) -> list
         stmt = select(TopicRow).options(selectinload(TopicRow.items))
         rows = [row for row in session.execute(stmt).scalars().all() if row.name != "Uncategorized"]
         topics_by_id = {row.id: _topic_from_row(row) for row in rows}
-        vectors: dict[str, np.ndarray] = {}
-        for row in rows:
-            item_vectors = [np.array(item.embedding) for item in row.items if item.embedding is not None]
-            if item_vectors:
-                vectors[row.id] = np.mean(item_vectors, axis=0)
+        vectors = _topic_centroids(rows)
 
     suggestions: list[TopicMergeSuggestion] = []
     ids = list(vectors.keys())
@@ -360,6 +367,44 @@ def suggested_topic_merges(min_similarity: float = 0.5, limit: int = 10) -> list
                         topic_a=topics_by_id[ids[i]], topic_b=topics_by_id[ids[j]], similarity=similarity
                     )
                 )
+    suggestions.sort(key=lambda s: s.similarity, reverse=True)
+    return suggestions[:limit]
+
+
+def suggested_item_topics(min_similarity: float = 0.6, limit: int = 20) -> list[ItemTopicSuggestion]:
+    """Per-item counterpart to suggested_topic_merges: for each item still sitting in
+    "Uncategorized", flags the existing topic whose items are semantically closest on average,
+    for a human to review and confirm via the normal move-item flow - never assigns automatically."""
+    with db.get_session() as session:
+        stmt = select(TopicRow).options(selectinload(TopicRow.items))
+        rows = session.execute(stmt).scalars().all()
+        uncategorized = next((row for row in rows if row.name == "Uncategorized"), None)
+        if uncategorized is None or not uncategorized.items:
+            return []
+        other_rows = [row for row in rows if row.name != "Uncategorized"]
+        topics_by_id = {row.id: _topic_from_row(row) for row in other_rows}
+        centroids = _topic_centroids(other_rows)
+        uncategorized_items = [
+            (_item_from_row(item_row), np.array(item_row.embedding))
+            for item_row in uncategorized.items
+            if item_row.embedding is not None
+        ]
+
+    suggestions: list[ItemTopicSuggestion] = []
+    for item, vector in uncategorized_items:
+        best_topic_id: str | None = None
+        best_similarity = -1.0
+        for topic_id, centroid in centroids.items():
+            similarity = float(np.dot(vector, centroid) / (np.linalg.norm(vector) * np.linalg.norm(centroid)))
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_topic_id = topic_id
+        if best_topic_id is not None and best_similarity >= min_similarity:
+            suggestions.append(
+                ItemTopicSuggestion(
+                    item=item, suggested_topic=topics_by_id[best_topic_id], similarity=best_similarity
+                )
+            )
     suggestions.sort(key=lambda s: s.similarity, reverse=True)
     return suggestions[:limit]
 

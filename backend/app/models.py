@@ -82,6 +82,12 @@ class TopicMergeSuggestion(CamelModel):
     similarity: float
 
 
+class ItemTopicSuggestion(CamelModel):
+    item: KnowledgeItem
+    suggested_topic: Topic = Field(alias="suggestedTopic")
+    similarity: float
+
+
 class Meeting(CamelModel):
     id: str
     title: str
