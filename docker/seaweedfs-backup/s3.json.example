@@ -1,0 +1,7 @@
+{
+  "endpoint_url": "http://seaweedfs:8333",
+  "region": "us-east-1",
+  "bucket": "second-brain",
+  "access_key": "REPLACE_WITH_ACCESS_KEY",
+  "secret_key": "REPLACE_WITH_SECRET_KEY"
+}
