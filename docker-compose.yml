@@ -118,7 +118,8 @@ services:
   # local timestamped tar.gz under ./backups/s3/. Runs once immediately,
   # then repeats every S3_BACKUP_INTERVAL_DAYS (default 30, override via
   # a .env S3_BACKUP_INTERVAL_DAYS=<days>).
-  s3-backup:
+  seaweedfs-backup:
+    container_name: second_brain_seaweedfs_backup
     build:
       context: .
       dockerfile: docker/seaweedfs-backup/Dockerfile
