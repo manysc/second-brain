@@ -1,7 +1,8 @@
 """SQLAlchemy ORM tables backing the domain models in app/models.py."""
 from __future__ import annotations
 
-from sqlalchemy import ARRAY, ForeignKey, String
+from sqlalchemy import ARRAY, Float, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from pgvector.sqlalchemy import Vector
@@ -34,6 +35,21 @@ class TopicRow(Base):
     name: Mapped[str] = mapped_column(String, unique=True)
 
     items: Mapped[list["KnowledgeItemRow"]] = relationship(back_populates="topic")
+
+    # -- automatic priority classification (calculated_* set only by topic_priority.py) --
+    calculated_priority: Mapped[str | None] = mapped_column(String, nullable=True)
+    calculated_priority_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    priority_confidence: Mapped[str | None] = mapped_column(String, nullable=True)
+    priority_signals: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    priority_hard_escalations: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    priority_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority_algorithm_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    priority_semantic_contribution: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    priority_calculated_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    # human override - never overwritten by automatic recalculation
+    manual_priority_override: Mapped[str | None] = mapped_column(String, nullable=True)
+    manual_override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manual_override_at: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class KnowledgeItemRow(Base):
@@ -82,3 +98,20 @@ class ReviewCandidateRow(Base):
     status: Mapped[str] = mapped_column(String, default="PENDING")
 
     meeting: Mapped[MeetingRow] = relationship(back_populates="review_candidates")
+
+
+class TopicPriorityHistoryRow(Base):
+    __tablename__ = "topic_priority_history"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    # ON DELETE CASCADE: deleting a topic must not be blocked by its own priority history
+    topic_id: Mapped[str] = mapped_column(ForeignKey("topics.id", ondelete="CASCADE"))
+    previous_priority: Mapped[str | None] = mapped_column(String, nullable=True)
+    new_priority: Mapped[str] = mapped_column(String)
+    previous_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    new_score: Mapped[float] = mapped_column(Float)
+    changed_at: Mapped[str] = mapped_column(String)
+    algorithm_version: Mapped[str] = mapped_column(String)
+    primary_drivers: Mapped[list[str]] = mapped_column(ARRAY(String))
+    trigger: Mapped[str] = mapped_column(String)
+    source_knowledge_item_ids: Mapped[list[str]] = mapped_column(ARRAY(String))

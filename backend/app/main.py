@@ -19,6 +19,7 @@ from app.models import (
     ItemType,
     KnowledgeItem,
     Meeting,
+    PriorityOverrideUpdate,
     ReviewCandidate,
     ReviewStatusUpdate,
     SearchResult,
@@ -26,6 +27,7 @@ from app.models import (
     TopicCreate,
     TopicMerge,
     TopicMergeSuggestion,
+    TopicPriorityHistoryEntry,
     TopicUpdate,
 )
 
@@ -187,6 +189,40 @@ def merge_topic(topic_id: str, payload: TopicMerge) -> Topic:
         raise HTTPException(status_code=400, detail=str(exc))
     except LookupError:
         raise HTTPException(status_code=404, detail="Topic not found")
+
+
+# declared before /api/topics/{topic_id}/... routes for the same reason as suggested-merges above
+@app.post("/api/topics/recalculate-priority")
+def recalculate_all_topic_priorities() -> dict[str, int]:
+    return {"recalculated": data.recalculate_all_topic_priorities()}
+
+
+@app.get("/api/priority-history/recent", response_model=list[TopicPriorityHistoryEntry])
+def get_recent_priority_escalations(days: int = Query(default=14, ge=1)) -> list[TopicPriorityHistoryEntry]:
+    return data.get_recent_priority_escalations(days)
+
+
+@app.post("/api/topics/{topic_id}/recalculate-priority", response_model=Topic)
+def recalculate_topic_priority(topic_id: str) -> Topic:
+    topic = data.recalculate_priority_for_topic(topic_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+@app.patch("/api/topics/{topic_id}/priority-override", response_model=Topic)
+def set_topic_priority_override(topic_id: str, payload: PriorityOverrideUpdate) -> Topic:
+    topic = data.set_priority_override(topic_id, payload.priority, payload.reason)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+@app.get("/api/topics/{topic_id}/priority-history", response_model=list[TopicPriorityHistoryEntry])
+def get_topic_priority_history(topic_id: str) -> list[TopicPriorityHistoryEntry]:
+    if data.get_topic_by_id(topic_id) is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return data.get_priority_history(topic_id)
 
 
 @app.get("/api/review", response_model=list[ReviewCandidate])

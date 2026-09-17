@@ -36,11 +36,76 @@ export type ReviewCandidate = {
   status: "PENDING" | "ACCEPTED" | "REJECTED";
 };
 
+export type TopicPriorityLevel = "CRITICAL" | "MAJOR" | "MINOR";
+export type PriorityConfidence = "HIGH" | "MEDIUM" | "LOW";
+
+// higher = more urgent; used to sort/compare priorities consistently across pages
+export const PRIORITY_RANK: Record<TopicPriorityLevel, number> = { MINOR: 0, MAJOR: 1, CRITICAL: 2 };
+
+export type TopicPrioritySignal = {
+  type: string;
+  rawValue: number | string | boolean | null;
+  normalizedScore: number;
+  weightedScore: number;
+  maxScore: number;
+  explanation: string;
+  sourceKnowledgeItemIds: string[];
+};
+
+export type HardEscalation = {
+  ruleId: string;
+  reason: string;
+  sourceKnowledgeItemIds: string[];
+};
+
+export type SemanticContribution = {
+  provider: string;
+  model: string;
+  scores: { critical: number; major: number; minor: number };
+  contribution: number;
+  disagreement: boolean;
+};
+
+export type ManualPriorityOverride = {
+  priority: TopicPriorityLevel;
+  reason: string | null;
+  overriddenAt: string;
+};
+
+export type TopicPriorityInfo = {
+  calculatedPriority: TopicPriorityLevel;
+  calculatedScore: number;
+  effectivePriority: TopicPriorityLevel;
+  confidence: PriorityConfidence;
+  signals: TopicPrioritySignal[];
+  hardEscalations: HardEscalation[];
+  explanation: string;
+  calculatedAt: string;
+  algorithmVersion: string;
+  semanticContribution: SemanticContribution | null;
+  manualOverride: ManualPriorityOverride | null;
+};
+
+export type TopicPriorityHistoryEntry = {
+  id: string;
+  topicId: string;
+  previousPriority: TopicPriorityLevel | null;
+  newPriority: TopicPriorityLevel;
+  previousScore: number | null;
+  newScore: number;
+  changedAt: string;
+  algorithmVersion: string;
+  primaryDrivers: string[];
+  trigger: string;
+  sourceKnowledgeItemIds: string[];
+};
+
 export type Topic = {
   id: string;
   name: string;
   items: KnowledgeItem[];
   stakeholders: string[];
+  priority: TopicPriorityInfo | null;
 };
 
 export type SearchResult = {
@@ -70,6 +135,7 @@ export type GraphNode = {
   topicId: string | null;
   topicName: string | null;
   meetingId: string;
+  priority: TopicPriorityLevel | null;
 };
 
 export type GraphEdge = {

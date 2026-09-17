@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { ForwardRefExoticComponent, RefAttributes } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ForceGraphMethods, ForceGraphProps } from "react-force-graph-2d";
-import type { GraphData, GraphEdge, GraphNode, ItemType } from "@/lib/domain";
+import type { GraphData, GraphEdge, GraphNode, ItemType, TopicPriorityLevel } from "@/lib/domain";
 
 // react-force-graph's default export is a generic component; next/dynamic can't infer that
 // generic, so we re-assert the concrete instantiation we actually use.
@@ -21,6 +21,12 @@ const TYPE_COLORS: Record<ItemType, string> = {
   ACTION: "#f0c75e",
   QUESTION: "#7eadd1",
 };
+const PRIORITY_LEVELS: TopicPriorityLevel[] = ["CRITICAL", "MAJOR", "MINOR"];
+const PRIORITY_RING_COLORS: Record<TopicPriorityLevel, string> = {
+  CRITICAL: "#a3372a",
+  MAJOR: "#a8791f",
+  MINOR: "#4f7a63",
+};
 const MIN_SEMANTIC_THRESHOLD = 0.35;
 
 export function GraphView({ data }: { data: GraphData }) {
@@ -28,6 +34,7 @@ export function GraphView({ data }: { data: GraphData }) {
   const graphRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | null>(null);
   const [size, setSize] = useState({ width: 800, height: 560 });
   const [activeTypes, setActiveTypes] = useState<Set<ItemType>>(new Set(TYPES));
+  const [activePriorities, setActivePriorities] = useState<Set<TopicPriorityLevel>>(new Set(PRIORITY_LEVELS));
   const [topicFilter, setTopicFilter] = useState("all");
   const [showTopicEdges, setShowTopicEdges] = useState(true);
   const [showSemanticEdges, setShowSemanticEdges] = useState(false);
@@ -62,7 +69,12 @@ export function GraphView({ data }: { data: GraphData }) {
   const graphData = useMemo(() => {
     const visibleIds = new Set(
       data.nodes
-        .filter((node) => activeTypes.has(node.type) && (topicFilter === "all" || node.topicId === topicFilter))
+        .filter(
+          (node) =>
+            activeTypes.has(node.type) &&
+            (topicFilter === "all" || node.topicId === topicFilter) &&
+            (node.priority === null || activePriorities.has(node.priority))
+        )
         .map((node) => node.id)
     );
     const nodes = data.nodes.filter((node) => visibleIds.has(node.id));
@@ -73,13 +85,22 @@ export function GraphView({ data }: { data: GraphData }) {
       return true;
     });
     return { nodes, links };
-  }, [data.nodes, data.edges, activeTypes, topicFilter, showTopicEdges, showSemanticEdges, semanticThreshold]);
+  }, [data.nodes, data.edges, activeTypes, activePriorities, topicFilter, showTopicEdges, showSemanticEdges, semanticThreshold]);
 
   function toggleType(type: ItemType) {
     setActiveTypes((prev) => {
       const next = new Set(prev);
       if (next.has(type)) next.delete(type);
       else next.add(type);
+      return next;
+    });
+  }
+
+  function togglePriority(level: TopicPriorityLevel) {
+    setActivePriorities((prev) => {
+      const next = new Set(prev);
+      if (next.has(level)) next.delete(level);
+      else next.add(level);
       return next;
     });
   }
@@ -106,6 +127,17 @@ export function GraphView({ data }: { data: GraphData }) {
             </option>
           ))}
         </select>
+        <div className="graph-type-filters">
+          {PRIORITY_LEVELS.map((level) => (
+            <span
+              key={level}
+              className={`filter ${activePriorities.has(level) ? "active" : ""}`}
+              onClick={() => togglePriority(level)}
+            >
+              {level}
+            </span>
+          ))}
+        </div>
         <label className="graph-toggle">
           <input type="checkbox" checked={showTopicEdges} onChange={(e) => setShowTopicEdges(e.target.checked)} />
           Same-topic links
@@ -140,6 +172,12 @@ export function GraphView({ data }: { data: GraphData }) {
         <span className="graph-legend-item"><i className="graph-legend-line graph-legend-line-related" /> Related</span>
         <span className="graph-legend-item"><i className="graph-legend-line graph-legend-line-topic" /> Same topic</span>
         <span className="graph-legend-item"><i className="graph-legend-line graph-legend-line-semantic" /> Possible</span>
+        {PRIORITY_LEVELS.map((level) => (
+          <span key={level} className="graph-legend-item">
+            <i style={{ background: "transparent", border: `2px solid ${PRIORITY_RING_COLORS[level]}` }} />
+            {level} topic ring
+          </span>
+        ))}
       </div>
       <div className="graph-canvas-wrap" ref={containerRef}>
         <ForceGraph2D
@@ -156,6 +194,18 @@ export function GraphView({ data }: { data: GraphData }) {
           }
           linkLineDash={(link) => (link.kind === "topic" ? [4, 3] : link.kind === "semantic" ? [1, 3] : null)}
           linkWidth={(link) => (link.kind === "related" ? 1.6 : 1)}
+          nodeCanvasObjectMode={() => "after"}
+          nodeCanvasObject={(node, ctx) => {
+            // priority is shown as a ring around the node, never as size - size already encodes
+            // connectivity (degree), and conflating the two would imply centrality = importance
+            if (!node.priority || node.x === undefined || node.y === undefined) return;
+            const radius = Math.sqrt(2 + (degreeById.get(node.id) ?? 0) * 0.6) * 4;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, radius + 2.5, 0, 2 * Math.PI);
+            ctx.strokeStyle = PRIORITY_RING_COLORS[node.priority];
+            ctx.lineWidth = node.priority === "CRITICAL" ? 2.5 : 1.5;
+            ctx.stroke();
+          }}
           onNodeClick={(node) => {
             setSelected(node);
             if (graphRef.current && node.x !== undefined && node.y !== undefined) {
@@ -177,6 +227,7 @@ export function GraphView({ data }: { data: GraphData }) {
             <span>{selected.confidence}</span>
             <span>{selected.owner ?? "Owner unassigned"}</span>
             <span>{selected.topicName ?? "Uncategorized"}</span>
+            {selected.priority ? <span>{selected.priority} priority</span> : null}
           </div>
           <Link className="back-link" href={`/meetings/${selected.meetingId}`}>
             View source meeting →

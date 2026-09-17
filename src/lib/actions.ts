@@ -2,7 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createTopic, deleteTopic, mergeTopics, moveItemTopic, updateReviewStatus, updateTopic } from "./api";
+import {
+  createTopic,
+  deleteTopic,
+  mergeTopics,
+  moveItemTopic,
+  recalculateTopicPriority,
+  setTopicPriorityOverride,
+  updateReviewStatus,
+  updateTopic,
+} from "./api";
+import type { TopicPriorityLevel } from "./domain";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong";
@@ -105,4 +115,51 @@ export async function acceptReviewAction(formData: FormData): Promise<void> {
 
 export async function rejectReviewAction(formData: FormData): Promise<void> {
   await decideReviewCandidate(formData, "REJECTED");
+}
+
+function revalidatePriorityAffectedPaths(topicId: string): void {
+  revalidatePath("/topics");
+  revalidatePath(`/topics/${topicId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/briefing");
+  revalidatePath("/graph");
+}
+
+export async function setPriorityOverrideAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const rawPriority = String(formData.get("priority") ?? "");
+  const priority = rawPriority === "" ? null : (rawPriority as TopicPriorityLevel);
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+
+  try {
+    await setTopicPriorityOverride(topicId, priority, reason);
+  } catch (err) {
+    redirect(`/topics/${encodeURIComponent(topicId)}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePriorityAffectedPaths(topicId);
+  redirect(`/topics/${encodeURIComponent(topicId)}`);
+}
+
+export async function clearPriorityOverrideAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+
+  try {
+    await setTopicPriorityOverride(topicId, null, null);
+  } catch (err) {
+    redirect(`/topics/${encodeURIComponent(topicId)}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePriorityAffectedPaths(topicId);
+  redirect(`/topics/${encodeURIComponent(topicId)}`);
+}
+
+export async function recalculatePriorityAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+
+  try {
+    await recalculateTopicPriority(topicId);
+  } catch (err) {
+    redirect(`/topics/${encodeURIComponent(topicId)}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePriorityAffectedPaths(topicId);
+  redirect(`/topics/${encodeURIComponent(topicId)}`);
 }

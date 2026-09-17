@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 ItemType = Literal["IDEA", "DECISION", "ACTION", "QUESTION"]
 Confidence = Literal["HIGH", "MEDIUM", "LOW"]
 ReviewStatus = Literal["PENDING", "ACCEPTED", "REJECTED"]
+TopicPriorityLevel = Literal["CRITICAL", "MAJOR", "MINOR"]
+PriorityConfidence = Literal["HIGH", "MEDIUM", "LOW"]
 
 
 class CamelModel(BaseModel):
@@ -49,11 +51,75 @@ class ReviewCandidate(CamelModel):
     status: ReviewStatus = "PENDING"
 
 
+class TopicPrioritySignal(CamelModel):
+    type: str
+    raw_value: float | str | bool | None = Field(default=None, alias="rawValue")
+    normalized_score: float = Field(alias="normalizedScore")
+    weighted_score: float = Field(alias="weightedScore")
+    max_score: float = Field(alias="maxScore")
+    explanation: str
+    source_knowledge_item_ids: list[str] = Field(default_factory=list, alias="sourceKnowledgeItemIds")
+
+
+class HardEscalation(CamelModel):
+    rule_id: str = Field(alias="ruleId")
+    reason: str
+    source_knowledge_item_ids: list[str] = Field(default_factory=list, alias="sourceKnowledgeItemIds")
+
+
+class SemanticContribution(CamelModel):
+    provider: str
+    model: str
+    scores: dict[str, float]
+    contribution: float
+    disagreement: bool
+
+
+class ManualPriorityOverride(CamelModel):
+    priority: TopicPriorityLevel
+    reason: str | None = None
+    overridden_at: str = Field(alias="overriddenAt")
+
+
+class TopicPriorityInfo(CamelModel):
+    calculated_priority: TopicPriorityLevel = Field(alias="calculatedPriority")
+    calculated_score: float = Field(alias="calculatedScore")
+    effective_priority: TopicPriorityLevel = Field(alias="effectivePriority")
+    confidence: PriorityConfidence
+    signals: list[TopicPrioritySignal] = Field(default_factory=list)
+    hard_escalations: list[HardEscalation] = Field(default_factory=list, alias="hardEscalations")
+    explanation: str
+    calculated_at: str = Field(alias="calculatedAt")
+    algorithm_version: str = Field(alias="algorithmVersion")
+    semantic_contribution: SemanticContribution | None = Field(default=None, alias="semanticContribution")
+    manual_override: ManualPriorityOverride | None = Field(default=None, alias="manualOverride")
+
+
+class TopicPriorityHistoryEntry(CamelModel):
+    id: str
+    topic_id: str = Field(alias="topicId")
+    previous_priority: TopicPriorityLevel | None = Field(default=None, alias="previousPriority")
+    new_priority: TopicPriorityLevel = Field(alias="newPriority")
+    previous_score: float | None = Field(default=None, alias="previousScore")
+    new_score: float = Field(alias="newScore")
+    changed_at: str = Field(alias="changedAt")
+    algorithm_version: str = Field(alias="algorithmVersion")
+    primary_drivers: list[str] = Field(default_factory=list, alias="primaryDrivers")
+    trigger: str
+    source_knowledge_item_ids: list[str] = Field(default_factory=list, alias="sourceKnowledgeItemIds")
+
+
+class PriorityOverrideUpdate(CamelModel):
+    priority: TopicPriorityLevel | None = None
+    reason: str | None = None
+
+
 class Topic(CamelModel):
     id: str
     name: str
     items: list[KnowledgeItem]
     stakeholders: list[str]
+    priority: TopicPriorityInfo | None = None
 
 
 class TopicCreate(CamelModel):
@@ -120,6 +186,8 @@ class GraphNode(CamelModel):
     topic_id: str | None = Field(default=None, alias="topicId")
     topic_name: str | None = Field(default=None, alias="topicName")
     meeting_id: str = Field(alias="meetingId")
+    # effective (override-aware) priority of the node's owning topic, if calculated
+    priority: TopicPriorityLevel | None = None
 
 
 class GraphEdge(CamelModel):

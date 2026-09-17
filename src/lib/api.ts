@@ -1,5 +1,17 @@
 import { notFound } from "next/navigation";
-import type { GraphData, ItemType, ItemTopicSuggestion, KnowledgeItem, Meeting, ReviewCandidate, SearchResult, Topic, TopicMergeSuggestion } from "./domain";
+import type {
+  GraphData,
+  ItemType,
+  ItemTopicSuggestion,
+  KnowledgeItem,
+  Meeting,
+  ReviewCandidate,
+  SearchResult,
+  Topic,
+  TopicMergeSuggestion,
+  TopicPriorityHistoryEntry,
+  TopicPriorityLevel,
+} from "./domain";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 
@@ -99,4 +111,30 @@ export function getReview(): Promise<ReviewCandidate[]> {
 
 export function updateReviewStatus(id: string, status: "ACCEPTED" | "REJECTED"): Promise<ReviewCandidate> {
   return apiMutate<ReviewCandidate>(`/api/review/${encodeURIComponent(id)}`, "PATCH", { status });
+}
+
+export function recalculateTopicPriority(id: string): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/recalculate-priority`, "POST");
+}
+
+export function recalculateAllTopicPriorities(): Promise<{ recalculated: number }> {
+  return apiMutate<{ recalculated: number }>("/api/topics/recalculate-priority", "POST");
+}
+
+export function setTopicPriorityOverride(
+  id: string,
+  priority: TopicPriorityLevel | null,
+  reason: string | null
+): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/priority-override`, "PATCH", { priority, reason });
+}
+
+export function getTopicPriorityHistory(id: string): Promise<TopicPriorityHistoryEntry[]> {
+  return apiFetch<TopicPriorityHistoryEntry[]>(`/api/topics/${encodeURIComponent(id)}/priority-history`);
+}
+
+export function getRecentPriorityEscalations(days?: number): Promise<TopicPriorityHistoryEntry[]> {
+  return apiFetch<TopicPriorityHistoryEntry[]>(
+    days !== undefined ? `/api/priority-history/recent?days=${days}` : "/api/priority-history/recent"
+  );
 }

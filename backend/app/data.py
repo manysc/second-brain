@@ -3,31 +3,41 @@ from __future__ import annotations
 
 import itertools
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
-from app import db, embeddings
-from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
+from app import db, embeddings, topic_priority
+from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicPriorityHistoryRow, TopicRow
 from app.models import (
     Evidence,
     GraphData,
     GraphEdge,
     GraphNode,
+    HardEscalation,
     ItemTopicSuggestion,
     ItemType,
     KnowledgeItem,
+    ManualPriorityOverride,
     Meeting,
     ReviewCandidate,
     ReviewStatus,
+    SemanticContribution,
     Topic,
     TopicMergeSuggestion,
+    TopicPriorityHistoryEntry,
+    TopicPriorityInfo,
+    TopicPrioritySignal,
 )
 
 # cosine distance (embeddings are normalized, so 0=identical..~2=opposite) below which an
 # accepted review candidate is treated as a duplicate of an existing item rather than promoted
 DUPLICATE_MATCH_THRESHOLD = 0.2
+
+# ranks used to detect an "escalation" (priority increased) in priority history
+_PRIORITY_RANK = {"MINOR": 0, "MAJOR": 1, "CRITICAL": 2}
 
 # search() ranks HIGH-confidence items first, ties broken by semantic distance
 _CONFIDENCE_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
@@ -178,6 +188,7 @@ def _get_or_create_uncategorized_topic(session: Session) -> str:
 
 
 def set_review_status(candidate_id: str, status: ReviewStatus) -> ReviewCandidate | None:
+    affected_topic_id: str | None = None
     with db.get_session() as session:
         row = session.get(ReviewCandidateRow, candidate_id)
         if row is None:
@@ -191,13 +202,15 @@ def set_review_status(candidate_id: str, status: ReviewStatus) -> ReviewCandidat
             if existing is not None:
                 # merge: a near-duplicate item already exists, so reinforce it instead of duplicating
                 existing.confidence = "HIGH"
+                affected_topic_id = existing.topic_id
             else:
                 owner = row.evidence_speaker
+                affected_topic_id = _get_or_create_uncategorized_topic(session)
                 session.add(
                     KnowledgeItemRow(
                         id=f"{row.meeting_id}:accepted-{row.id.split(':', 1)[1]}",
                         meeting_id=row.meeting_id,
-                        topic_id=_get_or_create_uncategorized_topic(session),
+                        topic_id=affected_topic_id,
                         type=_normalize_item_type(row.type),
                         description=row.description,
                         theme=None,
@@ -221,7 +234,39 @@ def set_review_status(candidate_id: str, status: ReviewStatus) -> ReviewCandidat
         row.status = status
         session.commit()
         session.refresh(row)
-        return _review_candidate_from_row(row)
+        result = _review_candidate_from_row(row)
+    if affected_topic_id:
+        recalculate_priority_for_topics({affected_topic_id}, trigger="review_accepted")
+    return result
+
+
+def _priority_info_from_row(row: TopicRow) -> TopicPriorityInfo | None:
+    if row.calculated_priority is None or row.calculated_priority_score is None:
+        return None
+    manual_override = None
+    if row.manual_priority_override is not None:
+        manual_override = ManualPriorityOverride(
+            priority=row.manual_priority_override,
+            reason=row.manual_override_reason,
+            overridden_at=row.manual_override_at or "",
+        )
+    return TopicPriorityInfo(
+        calculated_priority=row.calculated_priority,
+        calculated_score=row.calculated_priority_score,
+        effective_priority=row.manual_priority_override or row.calculated_priority,
+        confidence=row.priority_confidence or "LOW",
+        signals=[TopicPrioritySignal.model_validate(s) for s in (row.priority_signals or [])],
+        hard_escalations=[HardEscalation.model_validate(e) for e in (row.priority_hard_escalations or [])],
+        explanation=row.priority_explanation or "",
+        calculated_at=row.priority_calculated_at or "",
+        algorithm_version=row.priority_algorithm_version or topic_priority.TOPIC_PRIORITY_ALGORITHM_VERSION,
+        semantic_contribution=(
+            SemanticContribution.model_validate(row.priority_semantic_contribution)
+            if row.priority_semantic_contribution
+            else None
+        ),
+        manual_override=manual_override,
+    )
 
 
 def _topic_from_row(row: TopicRow) -> Topic:
@@ -231,6 +276,7 @@ def _topic_from_row(row: TopicRow) -> Topic:
         name=row.name,
         items=items,
         stakeholders=list(dict.fromkeys(s for item in items for s in item.stakeholders)),
+        priority=_priority_info_from_row(row),
     )
 
 
@@ -247,6 +293,143 @@ def get_topic_by_id(topic_id: str) -> Topic | None:
         stmt = select(TopicRow).where(TopicRow.id == topic_id).options(selectinload(TopicRow.items))
         row = session.execute(stmt).scalar_one_or_none()
         return _topic_from_row(row) if row is not None else None
+
+
+def _priority_history_entry_from_row(row: TopicPriorityHistoryRow) -> TopicPriorityHistoryEntry:
+    return TopicPriorityHistoryEntry(
+        id=row.id,
+        topic_id=row.topic_id,
+        previous_priority=row.previous_priority,
+        new_priority=row.new_priority,
+        previous_score=row.previous_score,
+        new_score=row.new_score,
+        changed_at=row.changed_at,
+        algorithm_version=row.algorithm_version,
+        primary_drivers=list(row.primary_drivers),
+        trigger=row.trigger,
+        source_knowledge_item_ids=list(row.source_knowledge_item_ids),
+    )
+
+
+def _persist_priority_result(session: Session, row: TopicRow, result: TopicPriorityInfo, trigger: str) -> None:
+    """Writes the calculated result onto the TopicRow and appends a history row iff the
+    category changed. Never touches manual_priority_override/manual_override_reason/at."""
+    previous_priority = row.calculated_priority
+    previous_score = row.calculated_priority_score
+
+    row.calculated_priority = result.calculated_priority
+    row.calculated_priority_score = result.calculated_score
+    row.priority_confidence = result.confidence
+    row.priority_signals = [s.model_dump(by_alias=True) for s in result.signals]
+    row.priority_hard_escalations = [e.model_dump(by_alias=True) for e in result.hard_escalations]
+    row.priority_explanation = result.explanation
+    row.priority_algorithm_version = result.algorithm_version
+    row.priority_semantic_contribution = (
+        result.semantic_contribution.model_dump(by_alias=True) if result.semantic_contribution else None
+    )
+    row.priority_calculated_at = result.calculated_at
+
+    if previous_priority is not None and previous_priority != result.calculated_priority:
+        top_drivers = sorted(
+            (s for s in result.signals if s.weighted_score > 0), key=lambda s: s.weighted_score, reverse=True
+        )[:3]
+        source_ids = sorted({iid for s in result.signals for iid in s.source_knowledge_item_ids})
+        session.add(
+            TopicPriorityHistoryRow(
+                id=str(uuid.uuid4()),
+                topic_id=row.id,
+                previous_priority=previous_priority,
+                new_priority=result.calculated_priority,
+                previous_score=previous_score,
+                new_score=result.calculated_score,
+                changed_at=result.calculated_at,
+                algorithm_version=result.algorithm_version,
+                primary_drivers=[d.explanation for d in top_drivers],
+                trigger=trigger,
+                source_knowledge_item_ids=source_ids,
+            )
+        )
+
+
+def _calculate_priority_for_row(session: Session, row: TopicRow) -> TopicPriorityInfo:
+    facts = topic_priority.TopicPrioritySignalExtractor().extract(session, row)
+    previous = None
+    if row.calculated_priority is not None and row.calculated_priority_score is not None:
+        previous = topic_priority.PreviousPriorityState(priority=row.calculated_priority, score=row.calculated_priority_score)
+    classifier = topic_priority.get_semantic_classifier()
+    semantic = classifier.classify(topic_priority.build_semantic_context(row, facts))
+    return topic_priority.TopicPriorityScorer().score(facts, previous, semantic)
+
+
+def recalculate_priority_for_topic(topic_id: str, trigger: str = "manual") -> Topic | None:
+    with db.get_session() as session:
+        stmt = select(TopicRow).where(TopicRow.id == topic_id).options(selectinload(TopicRow.items))
+        row = session.execute(stmt).scalar_one_or_none()
+        if row is None:
+            return None
+        result = _calculate_priority_for_row(session, row)
+        _persist_priority_result(session, row, result, trigger)
+        session.commit()
+        session.refresh(row)
+        return _topic_from_row(row)
+
+
+def recalculate_priority_for_topics(topic_ids: set[str], trigger: str) -> None:
+    """Recomputes only the given (affected) topics - not every Topic in the system."""
+    for topic_id in topic_ids:
+        if topic_id:
+            recalculate_priority_for_topic(topic_id, trigger=trigger)
+
+
+def recalculate_all_topic_priorities(trigger: str = "recalculate_all") -> int:
+    with db.get_session() as session:
+        rows = session.execute(select(TopicRow).options(selectinload(TopicRow.items))).scalars().all()
+        for row in rows:
+            result = _calculate_priority_for_row(session, row)
+            _persist_priority_result(session, row, result, trigger)
+        session.commit()
+        return len(rows)
+
+
+def set_priority_override(topic_id: str, priority: str | None, reason: str | None) -> Topic | None:
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        row.manual_priority_override = priority
+        row.manual_override_reason = reason if priority is not None else None
+        row.manual_override_at = datetime.now(timezone.utc).isoformat() if priority is not None else None
+        session.commit()
+    return get_topic_by_id(topic_id)
+
+
+def get_priority_history(topic_id: str) -> list[TopicPriorityHistoryEntry]:
+    with db.get_session() as session:
+        stmt = (
+            select(TopicPriorityHistoryRow)
+            .where(TopicPriorityHistoryRow.topic_id == topic_id)
+            .order_by(TopicPriorityHistoryRow.changed_at.desc())
+        )
+        rows = session.execute(stmt).scalars().all()
+    return [_priority_history_entry_from_row(row) for row in rows]
+
+
+def get_recent_priority_escalations(days: int = 14) -> list[TopicPriorityHistoryEntry]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    with db.get_session() as session:
+        stmt = (
+            select(TopicPriorityHistoryRow)
+            .where(TopicPriorityHistoryRow.changed_at >= cutoff)
+            .order_by(TopicPriorityHistoryRow.changed_at.desc())
+        )
+        rows = session.execute(stmt).scalars().all()
+    entries = [_priority_history_entry_from_row(row) for row in rows]
+    return [
+        entry
+        for entry in entries
+        if entry.previous_priority is not None
+        and _PRIORITY_RANK.get(entry.new_priority, 0) > _PRIORITY_RANK.get(entry.previous_priority, 0)
+    ]
 
 
 def create_topic(name: str) -> Topic:
@@ -299,6 +482,7 @@ def assign_item_topic(item_id: str, topic_id: str | None) -> KnowledgeItem | Non
         item_row = session.get(KnowledgeItemRow, item_id)
         if item_row is None:
             return None
+        old_topic_id = item_row.topic_id
         topic_name = None
         if topic_id is not None:
             topic_row = session.get(TopicRow, topic_id)
@@ -309,7 +493,9 @@ def assign_item_topic(item_id: str, topic_id: str | None) -> KnowledgeItem | Non
         item_row.theme = topic_name
         session.commit()
         session.refresh(item_row)
-        return _item_from_row(item_row)
+        result = _item_from_row(item_row)
+    recalculate_priority_for_topics({old_topic_id, topic_id}, trigger="item_topic_reassigned")
+    return result
 
 
 def merge_topics(source_topic_id: str, target_topic_id: str) -> Topic:
@@ -330,6 +516,7 @@ def merge_topics(source_topic_id: str, target_topic_id: str) -> Topic:
         session.delete(source)
         session.commit()
 
+    recalculate_priority_for_topics({target_topic_id}, trigger="topic_merge")
     merged = get_topic_by_id(target_topic_id)
     assert merged is not None
     return merged
@@ -487,6 +674,9 @@ def build_graph(min_semantic_similarity: float = 0.35) -> GraphData:
             topic_id=row.topic_id,
             topic_name=row.topic.name if row.topic is not None else None,
             meeting_id=row.meeting_id,
+            priority=(
+                (row.topic.manual_priority_override or row.topic.calculated_priority) if row.topic is not None else None
+            ),
         )
         for row in rows
     ]

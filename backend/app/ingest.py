@@ -294,4 +294,10 @@ def ingest_and_commit() -> int:
     with db.get_session() as session:
         count = ingest_all_from_s3(session)
         session.commit()
+    if count:
+        # bulk load, not a fine-grained edit - recalculating every topic is the documented
+        # exception to "recalculate only affected topics" (spec section 21)
+        from app import data
+
+        data.recalculate_all_topic_priorities(trigger="ingestion")
     return count

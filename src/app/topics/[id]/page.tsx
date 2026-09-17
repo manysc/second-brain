@@ -3,8 +3,10 @@ import { AppShell } from "@/components/AppShell";
 import { KnowledgeCard } from "@/components/KnowledgeCard";
 import { TopicAssignmentForm } from "@/components/TopicAssignmentForm";
 import { SuggestedItemTopics } from "@/components/SuggestedItemTopics";
+import { PriorityBadge } from "@/components/PriorityBadge";
+import { PriorityOverrideForm } from "@/components/PriorityOverrideForm";
 import { getMeetings, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
-import { deleteTopicAction, updateTopicAction } from "@/lib/actions";
+import { deleteTopicAction, recalculatePriorityAction, updateTopicAction } from "@/lib/actions";
 import type { KnowledgeItem } from "@/lib/domain";
 
 export default async function TopicDetail({
@@ -48,7 +50,7 @@ export default async function TopicDetail({
           <h1>{topic.name}</h1>
           <p className="lede">{topic.items.length} evidence-backed items currently contribute to this thread.</p>
         </div>
-        <span className="health-badge">WATCH</span>
+        <PriorityBadge priority={topic.priority} />
       </div>
       {error ? <p className="error-banner">{error}</p> : null}
       <div className="topic-detail-actions">
@@ -67,6 +69,48 @@ export default async function TopicDetail({
           </button>
         </form>
       </div>
+      <section className="priority-section">
+        <p className="eyebrow">Priority</p>
+        <PriorityBadge priority={topic.priority} />
+        {topic.priority ? (
+          <>
+            <p className="priority-explanation">{topic.priority.explanation}</p>
+            {topic.priority.hardEscalations.length ? (
+              <ul className="priority-escalations">
+                {topic.priority.hardEscalations.map((escalation) => (
+                  <li key={escalation.ruleId}>{escalation.reason}</li>
+                ))}
+              </ul>
+            ) : null}
+            <table className="priority-breakdown">
+              <tbody>
+                {topic.priority.signals.map((signal) => (
+                  <tr key={signal.type}>
+                    <td>{signal.explanation}</td>
+                    <td>
+                      {signal.weightedScore} / {signal.maxScore}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {topic.priority.semanticContribution ? (
+              <p className="priority-semantic">
+                Semantic analysis contribution: {topic.priority.semanticContribution.contribution > 0 ? "+" : ""}
+                {topic.priority.semanticContribution.contribution}
+                {topic.priority.semanticContribution.disagreement ? " (disagrees with structural signals)" : ""}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <p className="empty">Priority has not been calculated yet.</p>
+        )}
+        <form action={recalculatePriorityAction}>
+          <input type="hidden" name="topicId" value={topic.id} />
+          <button>Recalculate priority</button>
+        </form>
+        <PriorityOverrideForm topicId={topic.id} priority={topic.priority} />
+      </section>
       {topic.name === "Uncategorized" ? <SuggestedItemTopics suggestions={suggestions} /> : null}
       <section className="topic-situation">
         <p className="eyebrow">Current situation</p>

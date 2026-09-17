@@ -37,6 +37,7 @@ def init_db() -> None:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(engine)
     _backfill_topics(engine)
+    _backfill_topic_priority(engine)
 
 
 def _backfill_topics(engine: Engine) -> None:
@@ -62,6 +63,28 @@ def _backfill_topics(engine: Engine) -> None:
                 ),
                 {"tid": topic_id, "theme": theme},
             )
+
+
+def _backfill_topic_priority(engine: Engine) -> None:
+    """Idempotent migration: adds the priority-classification columns to a pre-existing
+    `topics` table. The new `topic_priority_history` table itself is created by create_all."""
+    columns = [
+        ("calculated_priority", "VARCHAR"),
+        ("calculated_priority_score", "DOUBLE PRECISION"),
+        ("priority_confidence", "VARCHAR"),
+        ("priority_signals", "JSONB"),
+        ("priority_hard_escalations", "JSONB"),
+        ("priority_explanation", "TEXT"),
+        ("priority_algorithm_version", "VARCHAR"),
+        ("priority_semantic_contribution", "JSONB"),
+        ("priority_calculated_at", "VARCHAR"),
+        ("manual_priority_override", "VARCHAR"),
+        ("manual_override_reason", "TEXT"),
+        ("manual_override_at", "VARCHAR"),
+    ]
+    with engine.begin() as conn:
+        for name, sql_type in columns:
+            conn.execute(text(f"ALTER TABLE topics ADD COLUMN IF NOT EXISTS {name} {sql_type}"))
 
 
 @contextmanager
