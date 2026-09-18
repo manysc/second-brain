@@ -138,6 +138,26 @@ class ReviewStatusUpdate(CamelModel):
     status: Literal["ACCEPTED", "REJECTED"]
 
 
+class FollowUpRelatedItem(CamelModel):
+    item: KnowledgeItem
+    topic_id: str = Field(alias="topicId")
+    topic_name: str = Field(alias="topicName")
+    reason: str
+
+
+class FollowUpTopic(CamelModel):
+    topic: Topic
+    follow_up_items: list[KnowledgeItem] = Field(default_factory=list, alias="followUpItems")
+    escalated_recently: bool = Field(alias="escalatedRecently")
+    escalation_drivers: list[str] = Field(default_factory=list, alias="escalationDrivers")
+    related_from_other_topics: list[FollowUpRelatedItem] = Field(default_factory=list, alias="relatedFromOtherTopics")
+
+
+class FollowUpResponse(CamelModel):
+    topics: list[FollowUpTopic]
+    generated_at: str = Field(alias="generatedAt")
+
+
 class TopicMerge(CamelModel):
     target_topic_id: str = Field(alias="targetTopicId")
 

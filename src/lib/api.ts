@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import type {
+  FollowUpResponse,
   GraphData,
   ItemType,
   ItemTopicSuggestion,
@@ -137,4 +138,12 @@ export function getRecentPriorityEscalations(days?: number): Promise<TopicPriori
   return apiFetch<TopicPriorityHistoryEntry[]>(
     days !== undefined ? `/api/priority-history/recent?days=${days}` : "/api/priority-history/recent"
   );
+}
+
+export function getFollowUp(limit?: number, dueSoonDays?: number): Promise<FollowUpResponse> {
+  const params = new URLSearchParams();
+  if (limit !== undefined) params.set("limit", String(limit));
+  if (dueSoonDays !== undefined) params.set("dueSoonDays", String(dueSoonDays));
+  const query = params.toString();
+  return apiFetch<FollowUpResponse>(query ? `/api/follow-up?${query}` : "/api/follow-up");
 }

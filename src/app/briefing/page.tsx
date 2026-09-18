@@ -1,6 +1,31 @@
 import { AppShell } from "@/components/AppShell";
-import { getMeeting, getRecentPriorityEscalations, getTopics } from "@/lib/api";
+import { FollowUpTopicCard } from "@/components/FollowUpTopicCard";
+import { getFollowUp } from "@/lib/api";
+
 export default async function Briefing() {
-  const [m, escalations, topics] = await Promise.all([getMeeting(), getRecentPriorityEscalations(14), getTopics()]);
-  const topicNameById = new Map(topics.map((t) => [t.id, t.name]));
-  return <AppShell><div className="page-head"><div><p className="eyebrow">Weekly briefing / 26 Aug 2026</p><h1>The shape of the work</h1><p className="lede">A grounded briefing assembled from your stored meeting evidence.</p></div></div><div className="briefing-grid"><section className="briefing-feature"><p className="eyebrow">What changed</p><h2>Release readiness became the near-term hinge.</h2><p>D-004 defers the go/no-go decision until SQA and the exact 2026.5 bugs are understood. Two reported delivery paths sit around that decision, with one date intentionally unresolved.</p><span className="evidence-link">Evidence: D-004 · A-009 · A-010</span></section><section className="briefing-block"><p className="eyebrow">Needs attention</p><h2>{m.items.filter(i=>i.type==='QUESTION').length} unresolved questions</h2><p>Shift Plan KPI overlap, deployment agreements, resource renewal and release cadence still need answers.</p></section><section className="briefing-block"><p className="eyebrow">Growth reflection</p><h2>Evidence before inference.</h2><p>One meeting is not enough to call a recurring professional pattern. More history is needed.</p><span className="evidence-link">Status: Insufficient evidence</span></section>{escalations.length ? <section className="briefing-block escalation-list"><p className="eyebrow">Became more critical</p><h2>{escalations.length} topic(s) recently escalated</h2>{escalations.map((e) => <div key={e.id}><b>{topicNameById.get(e.topicId) ?? e.topicId}</b> — {e.previousPriority} → {e.newPriority}<p>{e.primaryDrivers.join("; ") || "See topic priority history for details"}</p></div>)}</section> : null}</div></AppShell>; }
+  const followUp = await getFollowUp();
+  return (
+    <AppShell>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Briefing</p>
+          <h1>What to raise in the next meeting</h1>
+          <p className="lede">
+            Topics ranked by priority, with only the open questions, due actions, and unresolved
+            decisions worth carrying forward.
+          </p>
+        </div>
+      </div>
+      {followUp.topics.length ? (
+        <div className="briefing-grid">
+          {followUp.topics.map((topic) => (
+            <FollowUpTopicCard key={topic.topic.id} topic={topic} />
+          ))}
+        </div>
+      ) : (
+        <p className="empty">Nothing needs follow-up right now.</p>
+      )}
+    </AppShell>
+  );
+}
+

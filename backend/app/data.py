@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import itertools
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import numpy as np
 from sqlalchemy import select, update
@@ -13,6 +13,9 @@ from app import db, embeddings, topic_priority
 from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicPriorityHistoryRow, TopicRow
 from app.models import (
     Evidence,
+    FollowUpRelatedItem,
+    FollowUpResponse,
+    FollowUpTopic,
     GraphData,
     GraphEdge,
     GraphNode,
@@ -728,4 +731,141 @@ def build_graph(min_semantic_similarity: float = 0.35) -> GraphData:
                 _add_edge(a, b, "semantic", weight=similarity)
 
     return GraphData(nodes=nodes, edges=edges)
+
+
+def _resolve_related_item_id(raw_id: str, item_by_id: dict[str, KnowledgeItem], suffix_to_id: dict[str, str]) -> str | None:
+    """related_ids values may be a bare suffix (e.g. "D-004") or a full "meeting:id" - same
+    dual-format handling as related_items()/build_graph() above."""
+    if raw_id in item_by_id:
+        return raw_id
+    return suffix_to_id.get(raw_id)
+
+
+def _is_follow_up_action_due(item: KnowledgeItem, ref_date: date, due_soon_days: int) -> bool:
+    if item.due_date is None:
+        return True  # missing due date is itself a follow-up signal (ambiguous commitment)
+    due = topic_priority.parse_iso_date(item.due_date)
+    if due is None:
+        return True  # unparseable/ambiguous source text gets the same treatment as missing
+    return due <= ref_date + timedelta(days=due_soon_days)
+
+
+def _follow_up_sort_key(item: KnowledgeItem) -> tuple[int, date, str]:
+    """Questions first, then actions (overdue/undated first via ascending due date), then decisions."""
+    type_rank = {"QUESTION": 0, "ACTION": 1, "DECISION": 2}.get(item.type, 3)
+    due = topic_priority.parse_iso_date(item.due_date) or date.min
+    return (type_rank, due, item.id)
+
+
+def get_follow_up(limit: int = 5, due_soon_days: int = 7) -> FollowUpResponse:
+    """Ranks topics by priority/score and surfaces only the items worth raising at the next
+    meeting: open questions, due-soon/overdue/undated actions, and decisions with an unresolved
+    dependent - plus items pulled in from other topics via related_ids."""
+    topics = all_topics()
+    ref_date = datetime.now(timezone.utc).date()
+
+    item_by_id: dict[str, KnowledgeItem] = {}
+    topic_id_by_item_id: dict[str, str] = {}
+    topic_name_by_id: dict[str, str] = {}
+    for topic in topics:
+        topic_name_by_id[topic.id] = topic.name
+        for item in topic.items:
+            item_by_id[item.id] = item
+            topic_id_by_item_id[item.id] = topic.id
+    suffix_to_id: dict[str, str] = {}
+    for item_id in item_by_id:
+        suffix_to_id.setdefault(item_id.split(":", 1)[-1], item_id)
+
+    # reverse related_ids map: item id -> ids of items that list it in their own related_ids
+    referenced_by: dict[str, list[str]] = {}
+    for item in item_by_id.values():
+        for raw_id in item.related_ids:
+            target_id = _resolve_related_item_id(raw_id, item_by_id, suffix_to_id)
+            if target_id is not None:
+                referenced_by.setdefault(target_id, []).append(item.id)
+
+    follow_up_ids: set[str] = set()
+    for item in item_by_id.values():
+        if item.type == "QUESTION":
+            if not topic_priority.is_resolved_status(item.status):
+                follow_up_ids.add(item.id)
+        elif item.type == "ACTION":
+            if not topic_priority.is_resolved_status(item.status) and _is_follow_up_action_due(
+                item, ref_date, due_soon_days
+            ):
+                follow_up_ids.add(item.id)
+        elif item.type == "DECISION":
+            dependents = referenced_by.get(item.id, [])
+            if any(
+                not topic_priority.is_resolved_status(item_by_id[dep_id].status)
+                for dep_id in dependents
+                if dep_id in item_by_id
+            ):
+                follow_up_ids.add(item.id)
+
+    escalations_by_topic: dict[str, list[TopicPriorityHistoryEntry]] = {}
+    for entry in get_recent_priority_escalations(14):
+        escalations_by_topic.setdefault(entry.topic_id, []).append(entry)
+
+    ranked: list[tuple[Topic, list[KnowledgeItem]]] = []
+    for topic in topics:
+        follow_up_items = sorted(
+            (item for item in topic.items if item.id in follow_up_ids), key=_follow_up_sort_key
+        )
+        if follow_up_items:
+            ranked.append((topic, follow_up_items))
+
+    ranked.sort(
+        key=lambda pair: (
+            _PRIORITY_RANK.get(pair[0].priority.effective_priority, -1) if pair[0].priority else -1,
+            pair[0].priority.calculated_score if pair[0].priority else 0.0,
+        ),
+        reverse=True,
+    )
+    selected = ranked[:limit]
+
+    follow_up_topics: list[FollowUpTopic] = []
+    for topic, follow_up_items in selected:
+        topic_item_ids = {item.id for item in topic.items}
+        candidates: list[tuple[str, str]] = []
+        for item in topic.items:
+            for raw_id in item.related_ids:
+                target_id = _resolve_related_item_id(raw_id, item_by_id, suffix_to_id)
+                if target_id is not None:
+                    candidates.append((target_id, f"Related to {item.id} in this topic"))
+            for referencing_id in referenced_by.get(item.id, []):
+                candidates.append((referencing_id, f"References {item.id} in this topic"))
+
+        related: list[FollowUpRelatedItem] = []
+        seen_related_ids: set[str] = set()
+        for other_id, reason in candidates:
+            if other_id in topic_item_ids or other_id in seen_related_ids or other_id not in follow_up_ids:
+                continue
+            other_topic_id = topic_id_by_item_id.get(other_id)
+            if other_topic_id is None or other_topic_id == topic.id:
+                continue
+            seen_related_ids.add(other_id)
+            related.append(
+                FollowUpRelatedItem(
+                    item=item_by_id[other_id],
+                    topic_id=other_topic_id,
+                    topic_name=topic_name_by_id.get(other_topic_id, ""),
+                    reason=reason,
+                )
+            )
+            if len(related) >= 5:
+                break
+
+        topic_escalations = escalations_by_topic.get(topic.id, [])
+        follow_up_topics.append(
+            FollowUpTopic(
+                topic=topic,
+                follow_up_items=follow_up_items,
+                escalated_recently=bool(topic_escalations),
+                escalation_drivers=topic_escalations[0].primary_drivers if topic_escalations else [],
+                related_from_other_topics=related,
+            )
+        )
+
+    return FollowUpResponse(topics=follow_up_topics, generated_at=datetime.now(timezone.utc).isoformat())
 

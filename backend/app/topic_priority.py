@@ -83,7 +83,7 @@ def _diminishing_returns(count: int, cap: int) -> float:
     return min(1.0, math.log2(1 + count) / math.log2(1 + cap))
 
 
-def _parse_iso_date(value: str | None) -> date | None:
+def parse_iso_date(value: str | None) -> date | None:
     """Only a strict ISO 'YYYY-MM-DD' prefix counts as a real date; anything else (or None) is
     treated as unknown, never as overdue - ambiguous source text must never be normalized into
     an invented date (spec section 9)."""
@@ -100,7 +100,7 @@ def _is_structurally_blocked(status_text: str) -> bool:
     return any(keyword in lowered for keyword in PRIORITY_CONFIG["blocked_status_keywords"])
 
 
-def _is_resolved_status(status_text: str) -> bool:
+def is_resolved_status(status_text: str) -> bool:
     lowered = status_text.lower()
     return any(keyword in lowered for keyword in PRIORITY_CONFIG["resolved_status_keywords"])
 
@@ -151,7 +151,7 @@ class TopicPrioritySignalExtractor:
 
         item_facts: list[ItemFact] = []
         for item in items:
-            due = _parse_iso_date(item.due_date)
+            due = parse_iso_date(item.due_date)
             ambiguous = due is None and bool(item.due_date_source_text)
             heuristic_text = " ".join(
                 part
@@ -173,7 +173,7 @@ class TopicPrioritySignalExtractor:
 
         meeting_ages: list[int] = []
         for meeting_id in meeting_ids:
-            parsed = _parse_iso_date(meeting_dates.get(meeting_id))
+            parsed = parse_iso_date(meeting_dates.get(meeting_id))
             if parsed is not None:
                 meeting_ages.append((ref_date - parsed).days)
 
@@ -430,7 +430,7 @@ class TopicPriorityScorer:
         unresolved = [
             item
             for item in facts.items
-            if item.type in ("ACTION", "QUESTION") and not _is_resolved_status(item.status_text)
+            if item.type in ("ACTION", "QUESTION") and not is_resolved_status(item.status_text)
         ]
         volume_component = _diminishing_returns(len(unresolved), PRIORITY_CONFIG["unresolved_diminishing_cap"]) * caps["unresolved_volume"]
         overdue_actions = [
