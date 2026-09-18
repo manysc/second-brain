@@ -120,8 +120,10 @@ def get_graph(min_similarity: float = Query(default=0.35, alias="minSimilarity")
 
 # declared before /api/topics/{topic_id} - otherwise FastAPI would match "suggested-merges" as a topic_id
 @app.get("/api/topics/suggested-merges", response_model=list[TopicMergeSuggestion])
-def get_suggested_topic_merges() -> list[TopicMergeSuggestion]:
-    return data.suggested_topic_merges()
+def get_suggested_topic_merges(
+    max_related_items: int = Query(default=5, alias="maxRelatedItems"),
+) -> list[TopicMergeSuggestion]:
+    return data.suggested_topic_merges(max_related_items=max_related_items)
 
 
 # same path-ordering reason as suggested-merges above

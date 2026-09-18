@@ -532,13 +532,21 @@ def _topic_centroids(rows: list[TopicRow]) -> dict[str, np.ndarray]:
     return centroids
 
 
-def suggested_topic_merges(min_similarity: float = 0.5, limit: int = 10) -> list[TopicMergeSuggestion]:
+def suggested_topic_merges(
+    min_similarity: float = 0.5, limit: int = 10, max_related_items: int = 5
+) -> list[TopicMergeSuggestion]:
     """Flags pairs of topics whose items are semantically close on average, for a human to review
     and merge - never merges automatically. Excludes "Uncategorized" (a heterogeneous catch-all
-    with its own dedicated drag-to-merge flow) and topics with no embedded items."""
+    with its own dedicated drag-to-merge flow), topics with no embedded items, and topics that
+    already have `max_related_items` or more items (large, already-established topics don't need
+    further consolidation suggestions)."""
     with db.get_session() as session:
         stmt = select(TopicRow).options(selectinload(TopicRow.items))
-        rows = [row for row in session.execute(stmt).scalars().all() if row.name != "Uncategorized"]
+        rows = [
+            row
+            for row in session.execute(stmt).scalars().all()
+            if row.name != "Uncategorized" and len(row.items) < max_related_items
+        ]
         topics_by_id = {row.id: _topic_from_row(row) for row in rows}
         vectors = _topic_centroids(rows)
 

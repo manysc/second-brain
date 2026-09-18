@@ -192,6 +192,39 @@ def test_suggested_topic_merges_excludes_uncategorized(db_ready):
     assert all(s.topic_a.name != "Uncategorized" and s.topic_b.name != "Uncategorized" for s in suggestions)
 
 
+def test_suggested_topic_merges_excludes_topics_with_many_items(db_ready):
+    meetings = data.load_meetings()
+    items = data.all_items(meetings)
+    if len(items) < 6:
+        pytest.skip("need at least 6 seeded knowledge items with embeddings")
+    item_a, *bulk_items = items[:6]
+
+    from app.db_models import KnowledgeItemRow
+
+    with db.get_session() as session:
+        original_topics = {item.id: session.get(KnowledgeItemRow, item.id).topic_id for item in items[:6]}
+
+    topic_a = data.create_topic(_unique_name("bulk-a"))
+    topic_b = data.create_topic(_unique_name("bulk-b"))
+    data.assign_item_topic(item_a.id, topic_a.id)
+    for item in bulk_items:
+        data.assign_item_topic(item.id, topic_b.id)
+    try:
+        pair = frozenset((topic_a.id, topic_b.id))
+        # default threshold (5) excludes topic_b, which now has 5 items
+        default_suggestions = data.suggested_topic_merges(min_similarity=-1.0, limit=1000)
+        assert not any(frozenset((s.topic_a.id, s.topic_b.id)) == pair for s in default_suggestions)
+
+        # raising the threshold lets the pair back in
+        raised_suggestions = data.suggested_topic_merges(min_similarity=-1.0, limit=1000, max_related_items=6)
+        assert any(frozenset((s.topic_a.id, s.topic_b.id)) == pair for s in raised_suggestions)
+    finally:
+        for item in items[:6]:
+            data.assign_item_topic(item.id, original_topics[item.id])
+        data.delete_topic(topic_a.id)
+        data.delete_topic(topic_b.id)
+
+
 def test_suggested_item_topics_flags_similar_topic(db_ready):
     meetings = data.load_meetings()
     items = data.all_items(meetings)
