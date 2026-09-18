@@ -30,6 +30,7 @@ from app.models import (
     TopicMerge,
     TopicMergeSuggestion,
     TopicPriorityHistoryEntry,
+    TopicPriorityLevel,
     TopicUpdate,
 )
 
@@ -84,11 +85,16 @@ def get_meeting() -> Meeting:
 
 
 @app.get("/api/items", response_model=list[KnowledgeItem])
-def get_items(item_type: ItemType | None = Query(default=None, alias="type")) -> list[KnowledgeItem]:
+def get_items(
+    item_type: ItemType | None = Query(default=None, alias="type"),
+    priority: TopicPriorityLevel | None = Query(default=None),
+) -> list[KnowledgeItem]:
     items = data.all_items(data.load_meetings())
-    if item_type is None:
-        return items
-    return [item for item in items if item.type == item_type]
+    if item_type is not None:
+        items = [item for item in items if item.type == item_type]
+    if priority is not None:
+        items = [item for item in items if item.effective_priority == priority]
+    return items
 
 
 @app.get("/api/search", response_model=SearchResult)
@@ -245,6 +251,14 @@ def get_topic_priority_history(topic_id: str) -> list[TopicPriorityHistoryEntry]
     if data.get_topic_by_id(topic_id) is None:
         raise HTTPException(status_code=404, detail="Topic not found")
     return data.get_priority_history(topic_id)
+
+
+@app.patch("/api/items/{item_id}/priority-override", response_model=KnowledgeItem)
+def set_item_priority_override(item_id: str, payload: PriorityOverrideUpdate) -> KnowledgeItem:
+    item = data.set_item_priority_override(item_id, payload.priority, payload.reason)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
 
 
 @app.get("/api/review", response_model=list[ReviewCandidate])

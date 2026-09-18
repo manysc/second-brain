@@ -24,6 +24,9 @@ export type KnowledgeItem = {
   evidence: Evidence;
   relatedIds: string[];
   meetingId: string;
+  // Option A: items have no automatic scoring of their own - override wins, else inherited from topic
+  effectivePriority: TopicPriorityLevel | null;
+  manualOverride: ManualPriorityOverride | null;
 };
 
 export type ReviewCandidate = {
@@ -70,6 +73,14 @@ export type ManualPriorityOverride = {
   priority: TopicPriorityLevel;
   reason: string | null;
   overriddenAt: string;
+};
+
+// minimal shape shared by Topic and Item priority info, so PriorityBadge works for both
+export type EffectivePriorityInfo = {
+  effectivePriority: TopicPriorityLevel;
+  manualOverride: ManualPriorityOverride | null;
+  calculatedScore?: number;
+  confidence?: PriorityConfidence;
 };
 
 export type TopicPriorityInfo = {

@@ -77,6 +77,10 @@ class KnowledgeItemRow(Base):
     related_ids: Mapped[list[str]] = mapped_column(ARRAY(String))
     # nullable so rows can exist pre-embedding; ingestion always populates it
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    # human override - never overwritten by automatic Topic priority recalculation
+    manual_priority_override: Mapped[str | None] = mapped_column(String, nullable=True)
+    manual_override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manual_override_at: Mapped[str | None] = mapped_column(String, nullable=True)
 
     meeting: Mapped[MeetingRow] = relationship(back_populates="items")
     topic: Mapped[TopicRow | None] = relationship(back_populates="items")

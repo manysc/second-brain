@@ -49,8 +49,12 @@ export function getMeetingById(id: string): Promise<Meeting> {
   return apiFetch<Meeting>(`/api/meetings/${encodeURIComponent(id)}`);
 }
 
-export function getItems(type?: ItemType): Promise<KnowledgeItem[]> {
-  return apiFetch<KnowledgeItem[]>(type ? `/api/items?type=${type}` : "/api/items");
+export function getItems(type?: ItemType, priority?: TopicPriorityLevel): Promise<KnowledgeItem[]> {
+  const params = new URLSearchParams();
+  if (type) params.set("type", type);
+  if (priority) params.set("priority", priority);
+  const qs = params.toString();
+  return apiFetch<KnowledgeItem[]>(qs ? `/api/items?${qs}` : "/api/items");
 }
 
 export function getItem(id: string): Promise<{ item: KnowledgeItem; related: KnowledgeItem[] }> {
@@ -136,6 +140,14 @@ export function setTopicPriorityOverride(
 
 export function getTopicPriorityHistory(id: string): Promise<TopicPriorityHistoryEntry[]> {
   return apiFetch<TopicPriorityHistoryEntry[]>(`/api/topics/${encodeURIComponent(id)}/priority-history`);
+}
+
+export function setItemPriorityOverride(
+  id: string,
+  priority: TopicPriorityLevel | null,
+  reason: string | null
+): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(id)}/priority-override`, "PATCH", { priority, reason });
 }
 
 export function getRecentPriorityEscalations(days?: number): Promise<TopicPriorityHistoryEntry[]> {

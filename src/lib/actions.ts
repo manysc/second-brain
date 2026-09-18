@@ -9,6 +9,7 @@ import {
   moveItemsTopic,
   moveItemTopic,
   recalculateTopicPriority,
+  setItemPriorityOverride,
   setTopicPriorityOverride,
   updateReviewStatus,
   updateTopic,
@@ -178,4 +179,33 @@ export async function recalculatePriorityAction(formData: FormData): Promise<voi
   }
   revalidatePriorityAffectedPaths(topicId);
   redirect(`/topics/${encodeURIComponent(topicId)}`);
+}
+
+// KnowledgeCard renders on many pages with no single "return to" route, so these intentionally
+// don't redirect - revalidating lets Next re-render whichever page the form was submitted from.
+function revalidateItemPriorityAffectedPaths(): void {
+  revalidatePath("/items");
+  revalidatePath("/actions");
+  revalidatePath("/questions");
+  revalidatePath("/decisions");
+  revalidatePath("/ask");
+  revalidatePath("/dashboard");
+  revalidatePath("/topics");
+}
+
+export async function setItemPriorityOverrideAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const rawPriority = String(formData.get("priority") ?? "");
+  const priority = rawPriority === "" ? null : (rawPriority as TopicPriorityLevel);
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+
+  await setItemPriorityOverride(itemId, priority, reason);
+  revalidateItemPriorityAffectedPaths();
+}
+
+export async function clearItemPriorityOverrideAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+
+  await setItemPriorityOverride(itemId, null, null);
+  revalidateItemPriorityAffectedPaths();
 }

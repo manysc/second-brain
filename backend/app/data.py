@@ -62,7 +62,25 @@ class TopicHasItems(Exception):
         self.item_count = item_count
 
 
+def _item_effective_priority(row: KnowledgeItemRow) -> tuple[str | None, ManualPriorityOverride | None]:
+    """Option A: an item has no automatic scoring of its own - its own override wins, else it
+    inherits its owning Topic's effective priority. Shared by _item_from_row and build_graph so
+    the precedence rule only lives in one place."""
+    if row.manual_priority_override is not None:
+        override = ManualPriorityOverride(
+            priority=row.manual_priority_override,
+            reason=row.manual_override_reason,
+            overridden_at=row.manual_override_at or "",
+        )
+        return row.manual_priority_override, override
+    topic = row.topic
+    if topic is not None:
+        return topic.manual_priority_override or topic.calculated_priority, None
+    return None, None
+
+
 def _item_from_row(row: KnowledgeItemRow) -> KnowledgeItem:
+    effective_priority, manual_override = _item_effective_priority(row)
     return KnowledgeItem(
         id=row.id,
         type=row.type,
@@ -84,6 +102,8 @@ def _item_from_row(row: KnowledgeItemRow) -> KnowledgeItem:
         ),
         related_ids=list(row.related_ids),
         meeting_id=row.meeting_id,
+        effective_priority=effective_priority,
+        manual_override=manual_override,
     )
 
 
@@ -288,7 +308,7 @@ def all_topics() -> list[Topic]:
     with db.get_session() as session:
         stmt = select(TopicRow).options(selectinload(TopicRow.items))
         rows = session.execute(stmt).scalars().all()
-    return [_topic_from_row(row) for row in rows]
+        return [_topic_from_row(row) for row in rows]
 
 
 def get_topic_by_id(topic_id: str) -> Topic | None:
@@ -404,6 +424,21 @@ def set_priority_override(topic_id: str, priority: str | None, reason: str | Non
         row.manual_override_at = datetime.now(timezone.utc).isoformat() if priority is not None else None
         session.commit()
     return get_topic_by_id(topic_id)
+
+
+def set_item_priority_override(item_id: str, priority: str | None, reason: str | None) -> KnowledgeItem | None:
+    """Sets/clears a manual priority override directly on an item - independent of, and never
+    touched by, its Topic's automatic priority recalculation (see _item_effective_priority)."""
+    with db.get_session() as session:
+        row = session.get(KnowledgeItemRow, item_id)
+        if row is None:
+            return None
+        row.manual_priority_override = priority
+        row.manual_override_reason = reason if priority is not None else None
+        row.manual_override_at = datetime.now(timezone.utc).isoformat() if priority is not None else None
+        session.commit()
+        session.refresh(row)
+        return _item_from_row(row)
 
 
 def get_priority_history(topic_id: str) -> list[TopicPriorityHistoryEntry]:
@@ -714,9 +749,7 @@ def build_graph(min_semantic_similarity: float = 0.35) -> GraphData:
             topic_id=row.topic_id,
             topic_name=row.topic.name if row.topic is not None else None,
             meeting_id=row.meeting_id,
-            priority=(
-                (row.topic.manual_priority_override or row.topic.calculated_priority) if row.topic is not None else None
-            ),
+            priority=_item_effective_priority(row)[0],
         )
         for row in rows
     ]

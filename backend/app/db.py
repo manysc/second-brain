@@ -38,6 +38,7 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     _backfill_topics(engine)
     _backfill_topic_priority(engine)
+    _backfill_item_priority_override(engine)
 
 
 def _backfill_topics(engine: Engine) -> None:
@@ -85,6 +86,20 @@ def _backfill_topic_priority(engine: Engine) -> None:
     with engine.begin() as conn:
         for name, sql_type in columns:
             conn.execute(text(f"ALTER TABLE topics ADD COLUMN IF NOT EXISTS {name} {sql_type}"))
+
+
+def _backfill_item_priority_override(engine: Engine) -> None:
+    """Idempotent migration: adds the manual priority-override columns to a pre-existing
+    `knowledge_items` table. Items have no automatic calculation of their own (Option A) - only
+    an optional override that falls back to the owning Topic's priority when unset."""
+    columns = [
+        ("manual_priority_override", "VARCHAR"),
+        ("manual_override_reason", "TEXT"),
+        ("manual_override_at", "VARCHAR"),
+    ]
+    with engine.begin() as conn:
+        for name, sql_type in columns:
+            conn.execute(text(f"ALTER TABLE knowledge_items ADD COLUMN IF NOT EXISTS {name} {sql_type}"))
 
 
 @contextmanager

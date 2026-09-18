@@ -72,7 +72,6 @@ export default async function TopicDetail({
       </div>
       <section className="priority-section">
         <p className="eyebrow">Priority</p>
-        <PriorityBadge priority={topic.priority} />
         {topic.priority ? (
           <>
             <p className="priority-explanation">{topic.priority.explanation}</p>

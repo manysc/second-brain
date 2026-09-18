@@ -23,6 +23,12 @@ class Evidence(CamelModel):
     context: str | None = None
 
 
+class ManualPriorityOverride(CamelModel):
+    priority: TopicPriorityLevel
+    reason: str | None = None
+    overridden_at: str = Field(alias="overriddenAt")
+
+
 class KnowledgeItem(CamelModel):
     id: str
     type: ItemType
@@ -39,6 +45,9 @@ class KnowledgeItem(CamelModel):
     evidence: Evidence
     related_ids: list[str] = Field(default_factory=list, alias="relatedIds")
     meeting_id: str = Field(alias="meetingId")
+    # Option A: items have no automatic scoring of their own - override wins, else inherited from topic
+    effective_priority: TopicPriorityLevel | None = Field(default=None, alias="effectivePriority")
+    manual_override: ManualPriorityOverride | None = Field(default=None, alias="manualOverride")
 
 
 class ReviewCandidate(CamelModel):
@@ -73,12 +82,6 @@ class SemanticContribution(CamelModel):
     scores: dict[str, float]
     contribution: float
     disagreement: bool
-
-
-class ManualPriorityOverride(CamelModel):
-    priority: TopicPriorityLevel
-    reason: str | None = None
-    overridden_at: str = Field(alias="overriddenAt")
 
 
 class TopicPriorityInfo(CamelModel):
