@@ -106,6 +106,10 @@ export function moveItemTopic(itemId: string, topicId: string | null): Promise<K
   return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(itemId)}/topic`, "PATCH", { topicId });
 }
 
+export function moveItemsTopic(itemIds: string[], topicId: string | null): Promise<KnowledgeItem[]> {
+  return apiMutate<KnowledgeItem[]>("/api/items/topic", "PATCH", { itemIds, topicId });
+}
+
 export function getReview(): Promise<ReviewCandidate[]> {
   return apiFetch<ReviewCandidate[]>("/api/review");
 }

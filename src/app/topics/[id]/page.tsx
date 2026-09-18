@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { KnowledgeCard } from "@/components/KnowledgeCard";
 import { TopicAssignmentForm } from "@/components/TopicAssignmentForm";
+import { BulkMoveProvider, SelectableItem } from "@/components/BulkTopicMove";
 import { SuggestedItemTopics } from "@/components/SuggestedItemTopics";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { PriorityOverrideForm } from "@/components/PriorityOverrideForm";
@@ -131,80 +132,82 @@ export default async function TopicDetail({
           </details>
         ) : null}
       </section>
-      <div className="topic-columns">
-        <section>
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Emerging thinking</p>
-              <h2>Ideas</h2>
-            </div>
-          </div>
-          {ideas.length ? (
-            ideas.map((i) => (
-              <div key={i.id}>
-                <KnowledgeCard item={i} />
-                <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+      <BulkMoveProvider topics={topics} returnTo={`/topics/${topic.id}`}>
+        <div className="topic-columns">
+          <section>
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Emerging thinking</p>
+                <h2>Ideas</h2>
               </div>
-            ))
-          ) : (
-            <p className="empty">No ideas recorded yet.</p>
-          )}
-        </section>
-        <section>
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Open edges</p>
-              <h2>Questions</h2>
             </div>
-          </div>
-          {questions.length ? (
-            questions.map((i) => (
-              <div key={i.id}>
-                <KnowledgeCard item={i} />
-                <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+            {ideas.length ? (
+              ideas.map((i) => (
+                <SelectableItem key={i.id} id={i.id}>
+                  <KnowledgeCard item={i} />
+                  <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+                </SelectableItem>
+              ))
+            ) : (
+              <p className="empty">No ideas recorded yet.</p>
+            )}
+          </section>
+          <section>
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Open edges</p>
+                <h2>Questions</h2>
               </div>
-            ))
-          ) : (
-            <p className="empty">No unresolved questions recorded.</p>
-          )}
-        </section>
-        <section>
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Direction set</p>
-              <h2>Decisions</h2>
             </div>
-          </div>
-          {decisions.length ? (
-            decisions.map((i) => (
-              <div key={i.id}>
-                <KnowledgeCard item={i} />
-                <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+            {questions.length ? (
+              questions.map((i) => (
+                <SelectableItem key={i.id} id={i.id}>
+                  <KnowledgeCard item={i} />
+                  <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+                </SelectableItem>
+              ))
+            ) : (
+              <p className="empty">No unresolved questions recorded.</p>
+            )}
+          </section>
+          <section>
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Direction set</p>
+                <h2>Decisions</h2>
               </div>
-            ))
-          ) : (
-            <p className="empty">No decisions recorded.</p>
-          )}
-        </section>
-        <section>
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Work in motion</p>
-              <h2>Actions</h2>
             </div>
-          </div>
-          {actions.length ? (
-            actions.map((i) => (
-              <div key={i.id}>
-                <KnowledgeCard item={i} />
-                <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+            {decisions.length ? (
+              decisions.map((i) => (
+                <SelectableItem key={i.id} id={i.id}>
+                  <KnowledgeCard item={i} />
+                  <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+                </SelectableItem>
+              ))
+            ) : (
+              <p className="empty">No decisions recorded.</p>
+            )}
+          </section>
+          <section>
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Work in motion</p>
+                <h2>Actions</h2>
               </div>
-            ))
-          ) : (
-            <p className="empty">No actions recorded.</p>
-          )}
-        </section>
-      </div>
+            </div>
+            {actions.length ? (
+              actions.map((i) => (
+                <SelectableItem key={i.id} id={i.id}>
+                  <KnowledgeCard item={i} />
+                  <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+                </SelectableItem>
+              ))
+            ) : (
+              <p className="empty">No actions recorded.</p>
+            )}
+          </section>
+        </div>
+      </BulkMoveProvider>
     </AppShell>
   );
 }

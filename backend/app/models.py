@@ -134,6 +134,11 @@ class ItemTopicUpdate(CamelModel):
     topic_id: str | None = Field(default=None, alias="topicId")
 
 
+class ItemsTopicBulkUpdate(CamelModel):
+    item_ids: list[str] = Field(alias="itemIds")
+    topic_id: str | None = Field(default=None, alias="topicId")
+
+
 class ReviewStatusUpdate(CamelModel):
     status: Literal["ACCEPTED", "REJECTED"]
 

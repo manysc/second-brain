@@ -110,6 +110,53 @@ def test_assign_item_topic_rejects_unknown_topic(db_ready):
         data.assign_item_topic(item.id, "not-a-real-topic-id")
 
 
+def test_assign_items_topic_bulk_moves_multiple_items(db_ready):
+    meetings = data.load_meetings()
+    items = data.all_items(meetings)
+    if len(items) < 2:
+        pytest.skip("need at least 2 seeded knowledge items to bulk-move")
+    item_a, item_b = items[0], items[1]
+
+    from app.db_models import KnowledgeItemRow
+
+    with db.get_session() as session:
+        original_topic_ids = {
+            item_a.id: session.get(KnowledgeItemRow, item_a.id).topic_id,
+            item_b.id: session.get(KnowledgeItemRow, item_b.id).topic_id,
+        }
+
+    topic = data.create_topic(_unique_name("bulk-target"))
+    try:
+        moved = data.assign_items_topic([item_a.id, item_b.id], topic.id)
+        assert {i.id for i in moved} == {item_a.id, item_b.id}
+        assert all(i.theme == topic.name for i in moved)
+        topic_item_ids = {i.id for i in data.get_topic_by_id(topic.id).items}
+        assert item_a.id in topic_item_ids
+        assert item_b.id in topic_item_ids
+    finally:
+        for item_id, original_topic_id in original_topic_ids.items():
+            data.assign_item_topic(item_id, original_topic_id)
+        data.delete_topic(topic.id)
+
+
+def test_assign_items_topic_rejects_unknown_topic(db_ready):
+    meetings = data.load_meetings()
+    items = data.all_items(meetings)
+    if not items:
+        pytest.skip("no seeded knowledge items available")
+    with pytest.raises(ValueError):
+        data.assign_items_topic([items[0].id], "not-a-real-topic-id")
+
+
+def test_assign_items_topic_rejects_unknown_item(db_ready):
+    topic = data.create_topic(_unique_name("bulk-missing-item"))
+    try:
+        with pytest.raises(ValueError):
+            data.assign_items_topic(["not-a-real-item-id"], topic.id)
+    finally:
+        data.delete_topic(topic.id)
+
+
 def test_merge_topics_moves_items_and_deletes_source(db_ready):
     meetings = data.load_meetings()
     if not data.all_items(meetings):

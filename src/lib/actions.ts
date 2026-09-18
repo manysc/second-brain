@@ -6,6 +6,7 @@ import {
   createTopic,
   deleteTopic,
   mergeTopics,
+  moveItemsTopic,
   moveItemTopic,
   recalculateTopicPriority,
   setTopicPriorityOverride,
@@ -73,6 +74,21 @@ export async function moveItemTopicAction(formData: FormData): Promise<void> {
   revalidatePath(`/topics/${currentTopicId}`);
   if (topicId) revalidatePath(`/topics/${topicId}`);
   redirect(`/topics/${encodeURIComponent(currentTopicId)}`);
+}
+
+export async function moveItemsTopicAction(itemIds: string[], topicId: string | null, returnTo: string): Promise<void> {
+  if (itemIds.length === 0) return;
+
+  try {
+    await moveItemsTopic(itemIds, topicId);
+  } catch (err) {
+    redirect(`${returnTo}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath("/items");
+  revalidatePath("/topics");
+  revalidatePath(returnTo);
+  if (topicId) revalidatePath(`/topics/${topicId}`);
+  redirect(returnTo);
 }
 
 export async function mergeTopicsAction(sourceTopicId: string, targetTopicId: string): Promise<void> {

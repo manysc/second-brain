@@ -15,6 +15,7 @@ from app.models import (
     FollowUpResponse,
     GraphData,
     ItemDetail,
+    ItemsTopicBulkUpdate,
     ItemTopicSuggestion,
     ItemTopicUpdate,
     ItemType,
@@ -190,6 +191,16 @@ def set_item_topic(item_id: str, payload: ItemTopicUpdate) -> KnowledgeItem:
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
     return item
+
+
+@app.patch("/api/items/topic", response_model=list[KnowledgeItem])
+def set_items_topic(payload: ItemsTopicBulkUpdate) -> list[KnowledgeItem]:
+    if not payload.item_ids:
+        raise HTTPException(status_code=400, detail="itemIds must not be empty")
+    try:
+        return data.assign_items_topic(payload.item_ids, payload.topic_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @app.post("/api/topics/{topic_id}/merge", response_model=Topic)

@@ -501,6 +501,35 @@ def assign_item_topic(item_id: str, topic_id: str | None) -> KnowledgeItem | Non
     return result
 
 
+def assign_items_topic(item_ids: list[str], topic_id: str | None) -> list[KnowledgeItem]:
+    """Bulk version of assign_item_topic - one transaction and one priority recalc pass
+    for all affected items, instead of looping the single-item version per id."""
+    with db.get_session() as session:
+        topic_name = None
+        if topic_id is not None:
+            topic_row = session.get(TopicRow, topic_id)
+            if topic_row is None:
+                raise ValueError("topic not found")
+            topic_name = topic_row.name
+        item_rows = session.execute(
+            select(KnowledgeItemRow).where(KnowledgeItemRow.id.in_(item_ids))
+        ).scalars().all()
+        found_ids = {row.id for row in item_rows}
+        missing = set(item_ids) - found_ids
+        if missing:
+            raise ValueError(f"items not found: {sorted(missing)}")
+        old_topic_ids = {row.topic_id for row in item_rows}
+        for row in item_rows:
+            row.topic_id = topic_id
+            row.theme = topic_name
+        session.commit()
+        for row in item_rows:
+            session.refresh(row)
+        results = [_item_from_row(row) for row in item_rows]
+    recalculate_priority_for_topics(old_topic_ids | {topic_id}, trigger="items_topic_bulk_reassigned")
+    return results
+
+
 def merge_topics(source_topic_id: str, target_topic_id: str) -> Topic:
     """Moves every item out of the source topic into the target topic, then deletes the
     now-empty source topic (backs drag-and-drop merging, e.g. "Uncategorized" onto a topic)."""
