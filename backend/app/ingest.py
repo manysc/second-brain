@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import select
@@ -37,6 +38,19 @@ def _normalize_confidence(value: str) -> Confidence:
 
 def _normalize_evidence(raw: RawEvidence) -> Evidence:
     return Evidence(speaker=raw.speaker, timestamp=raw.timestamp, quote=raw.quote, context=raw.context)
+
+
+def _normalize_meeting_date(value: str, meeting_id: str) -> str:
+    """Meeting dates must already be strict ISO 'YYYY-MM-DD'; fail loudly instead of guessing at
+    ambiguous formats (same policy as due_date parsing, spec section 9)."""
+    candidate = value.strip()
+    try:
+        date.fromisoformat(candidate)
+    except ValueError as exc:
+        raise ValueError(
+            f"meeting '{meeting_id}' has a non-ISO date {value!r}; expected 'YYYY-MM-DD'"
+        ) from exc
+    return candidate
 
 
 def _item_id_prefix(meeting_id: str, variant: str) -> str:
@@ -125,7 +139,7 @@ def _normalize_extraction(parsed: RawExtraction, meeting_id: str, variant: str) 
     return Meeting(
         id=meeting_id,
         title=parsed.meeting.title,
-        date=parsed.meeting.date,
+        date=_normalize_meeting_date(parsed.meeting.date, meeting_id),
         source_url=parsed.meeting.source_url,
         items=items,
         review_candidates=review_candidates,
