@@ -10,19 +10,19 @@ from pathlib import Path
 import boto3
 import pytest
 from moto import mock_aws
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import OperationalError
 
 from app import data, db, ingest, s3_store
-from app.db_models import KnowledgeItemRow
+from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
 
 DATA_DIR = Path(__file__).resolve().parent / "fixtures"
 BUCKET = "test-bucket"
 PREFIX = "meetings/"
 FILES = [
-    "meeting-extract.json",
-    "MS-PS_1-1_Meeting-Extract_082126.json",
-    "MS-PS_1-1_Meeting-Extract_082726.json",
+    "synthetic-extract.json",
+    "synthetic-sync-a.json",
+    "synthetic-sync-b.json",
 ]
 
 
@@ -33,6 +33,32 @@ def db_ready():
     except OperationalError:
         pytest.skip("Postgres is not reachable at DATABASE_URL; skipping DB integration tests")
     yield
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _remove_fixture_meetings(db_ready):
+    # fixtures are synthetic and their file names can't collide with real meeting ids, so once the module
+    # is done drop them - otherwise their items (and "suggested new topics") linger in the dev database
+    yield
+    meeting_ids = [Path(name).stem for name in FILES]
+    with db.get_session() as session:
+        topic_ids = {
+            topic_id
+            for (topic_id,) in session.execute(
+                select(KnowledgeItemRow.topic_id).where(
+                    KnowledgeItemRow.meeting_id.in_(meeting_ids), KnowledgeItemRow.topic_id.is_not(None)
+                )
+            )
+        }
+        session.execute(delete(ReviewCandidateRow).where(ReviewCandidateRow.meeting_id.in_(meeting_ids)))
+        session.execute(delete(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id.in_(meeting_ids)))
+        session.execute(delete(MeetingRow).where(MeetingRow.id.in_(meeting_ids)))
+        if topic_ids:
+            # only topics left empty are removed, so a real topic is never touched
+            still_used = set(session.execute(select(KnowledgeItemRow.topic_id).where(KnowledgeItemRow.topic_id.in_(topic_ids))).scalars())
+            if topic_ids - still_used:
+                session.execute(delete(TopicRow).where(TopicRow.id.in_(topic_ids - still_used)))
+        session.commit()
 
 
 def _upload_fixtures(client) -> None:
@@ -59,9 +85,7 @@ def seeded_meetings(db_ready, monkeypatch):
             count = ingest.ingest_all_from_s3(session)
             session.commit()
 
-    # no teardown: ingestion is upsert-based/idempotent, and this fixture ingests the same
-    # meeting fixture files the dev-ingestion script uses, so leaving rows in place keeps the
-    # shared local Postgres instance populated instead of wiping it out after each test run
+    # rows stay for the rest of the module (ingestion is idempotent); _remove_fixture_meetings cleans up
     yield count
 
 
@@ -154,7 +178,7 @@ def test_reingesting_unchanged_meetings_skips_stored_items_and_reports_no_change
 def test_reingesting_edited_description_reembeds_only_that_item(seeded_meetings, monkeypatch):
     with db.get_session() as session:
         row = session.execute(
-            select(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id == "meeting-extract").limit(1)
+            select(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id == "synthetic-extract").limit(1)
         ).scalar_one()
         item_id, original = row.id, row.description
         row.description = "stale description"

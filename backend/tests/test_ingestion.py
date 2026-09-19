@@ -23,7 +23,7 @@ EXPECTED_RELATIONS = [
 ]
 
 
-def _raw_data(filename: str = "meeting-extract.json") -> dict:
+def _raw_data(filename: str = "synthetic-extract.json") -> dict:
     original = (DATA_DIR / filename).read_text(encoding="utf8").strip()
     repaired = original if original.startswith("{") else f"{{{original}}}"
     return json.loads(repaired)
@@ -78,7 +78,7 @@ def test_parse_meeting_from_s3_normalizes_the_same_counts(s3_env):
     with mock_aws():
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
-        _upload(client, "meeting-extract.json")
+        _upload(client, "synthetic-extract.json")
 
         keys = s3_store.list_extract_keys()
         assert len(keys) == 1
@@ -94,8 +94,8 @@ def test_parse_meeting_from_s3_derives_unique_ids_from_s3_key_when_source_ids_co
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
         # these fixtures share/omit meeting_id in their own JSON (real data-quality issue)
-        _upload(client, "MS-PS_1-1_Meeting-Extract_082126.json")
-        _upload(client, "MS-PS_1-1_Meeting-Extract_082726.json")
+        _upload(client, "synthetic-sync-a.json")
+        _upload(client, "synthetic-sync-b.json")
 
         meetings = [ingest.parse_meeting_from_s3(key) for key in s3_store.list_extract_keys()]
         assert len(meetings) == 2
