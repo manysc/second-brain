@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.exc import OperationalError
 
 from app import data, db
@@ -62,60 +63,54 @@ def _item_row(
 def follow_up_scenario(db_ready):
     """Seeds two qualifying topics (A, B, cross-linked) and one non-qualifying topic (C)."""
     meeting_id = f"follow-up-meeting-{uuid.uuid4().hex[:8]}"
-    topic_a = data.create_topic(f"follow-up-topic-a-{uuid.uuid4().hex[:8]}")
-    topic_b = data.create_topic(f"follow-up-topic-b-{uuid.uuid4().hex[:8]}")
-    topic_c = data.create_topic(f"follow-up-topic-c-{uuid.uuid4().hex[:8]}")
-
-    q1 = f"{meeting_id}:Q-1"
-    d1 = f"{meeting_id}:D-1"
-    a_overdue = f"{meeting_id}:A-OVERDUE"
-    a_resolved = f"{meeting_id}:A-RESOLVED"
-    a_dependent = f"{meeting_id}:A-DEPENDENT"
-    q_resolved = f"{meeting_id}:Q-RESOLVED"
-
-    with db.get_session() as session:
-        session.add(MeetingRow(id=meeting_id, title="Follow-up test meeting", date="2026-09-01", source_url="https://example.com"))
-        session.add(_item_row(q1, meeting_id, topic_a.id, "QUESTION", "Open"))
-        session.add(_item_row(d1, meeting_id, topic_a.id, "DECISION", "Open"))
-        session.add(_item_row(a_overdue, meeting_id, topic_a.id, "ACTION", "Open", due_date="2020-01-01"))
-        session.add(_item_row(a_resolved, meeting_id, topic_a.id, "ACTION", "Resolved"))
-        # references D-1 (topic A) from topic B, and is itself unresolved (no due date)
-        session.add(_item_row(a_dependent, meeting_id, topic_b.id, "ACTION", "Open", related_ids=["D-1"]))
-        session.add(_item_row(q_resolved, meeting_id, topic_c.id, "QUESTION", "Answered"))
-        session.commit()
-
-    ids = {
-        "meeting_id": meeting_id,
-        "topic_a": topic_a.id,
-        "topic_b": topic_b.id,
-        "topic_c": topic_c.id,
-        "q1": q1,
-        "d1": d1,
-        "a_overdue": a_overdue,
-        "a_resolved": a_resolved,
-        "a_dependent": a_dependent,
-        "q_resolved": q_resolved,
-    }
+    topic_ids: list[str] = []
     try:
-        yield ids
-    finally:
+        # setup is inside the try so topics created before a later setup step fails still get cleaned up
+        topic_a = data.create_topic(f"follow-up-topic-a-{uuid.uuid4().hex[:8]}")
+        topic_ids.append(topic_a.id)
+        topic_b = data.create_topic(f"follow-up-topic-b-{uuid.uuid4().hex[:8]}")
+        topic_ids.append(topic_b.id)
+        topic_c = data.create_topic(f"follow-up-topic-c-{uuid.uuid4().hex[:8]}")
+        topic_ids.append(topic_c.id)
+
+        q1 = f"{meeting_id}:Q-1"
+        d1 = f"{meeting_id}:D-1"
+        a_overdue = f"{meeting_id}:A-OVERDUE"
+        a_resolved = f"{meeting_id}:A-RESOLVED"
+        a_dependent = f"{meeting_id}:A-DEPENDENT"
+        q_resolved = f"{meeting_id}:Q-RESOLVED"
+
         with db.get_session() as session:
-            meeting_row = session.get(MeetingRow, meeting_id)
-            if meeting_row is not None:
-                session.delete(meeting_row)
-            try:
-                session.commit()
-            except Exception:
-                session.rollback()
-        for topic_id in (topic_a.id, topic_b.id, topic_c.id):
-            with db.get_session() as session:
-                topic_row = session.get(TopicRow, topic_id)
-                if topic_row is not None:
-                    session.delete(topic_row)
-                try:
-                    session.commit()
-                except Exception:
-                    session.rollback()
+            session.add(MeetingRow(id=meeting_id, title="Follow-up test meeting", date="2026-09-01", source_url="https://example.com"))
+            session.add(_item_row(q1, meeting_id, topic_a.id, "QUESTION", "Open"))
+            session.add(_item_row(d1, meeting_id, topic_a.id, "DECISION", "Open"))
+            session.add(_item_row(a_overdue, meeting_id, topic_a.id, "ACTION", "Open", due_date="2020-01-01"))
+            session.add(_item_row(a_resolved, meeting_id, topic_a.id, "ACTION", "Resolved"))
+            # references D-1 (topic A) from topic B, and is itself unresolved (no due date)
+            session.add(_item_row(a_dependent, meeting_id, topic_b.id, "ACTION", "Open", related_ids=["D-1"]))
+            session.add(_item_row(q_resolved, meeting_id, topic_c.id, "QUESTION", "Answered"))
+            session.commit()
+
+        yield {
+            "meeting_id": meeting_id,
+            "topic_a": topic_a.id,
+            "topic_b": topic_b.id,
+            "topic_c": topic_c.id,
+            "q1": q1,
+            "d1": d1,
+            "a_overdue": a_overdue,
+            "a_resolved": a_resolved,
+            "a_dependent": a_dependent,
+            "q_resolved": q_resolved,
+        }
+    finally:
+        # one transaction, errors not swallowed: items are deleted first (they reference both the meeting and
+        # the topics), topic priority history cascades with the topic
+        with db.get_session() as session:
+            session.execute(delete(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id == meeting_id))
+            session.execute(delete(MeetingRow).where(MeetingRow.id == meeting_id))
+            session.execute(delete(TopicRow).where(TopicRow.id.in_(topic_ids)))
+            session.commit()
 
 
 def _topics_by_id(response, topic_id: str):
