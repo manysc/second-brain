@@ -1,6 +1,15 @@
 import type { KnowledgeItem } from "@/lib/domain";
 import { PriorityBadge } from "@/components/PriorityBadge";
-import { clearItemPriorityOverrideAction, setItemPriorityOverrideAction } from "@/lib/actions";
+import { StatusBadge } from "@/components/StatusBadge";
+import { NotesSection } from "@/components/NotesSection";
+import {
+  addItemNoteAction,
+  clearItemPriorityOverrideAction,
+  deleteItemNoteAction,
+  setItemPriorityOverrideAction,
+  setItemStatusAction,
+  updateItemNoteAction,
+} from "@/lib/actions";
 
 export function Confidence({ value }: { value: string }) {
   return (
@@ -25,6 +34,16 @@ export function KnowledgeCard({ item }: { item: KnowledgeItem }) {
         <PriorityBadge priority={priorityInfo} />
       </div>
       <h3>{item.description}</h3>
+      {item.type === "QUESTION" || item.type === "ACTION" ? (
+        <div className="card-status">
+          <StatusBadge status={item.status} />
+          <form action={setItemStatusAction}>
+            <input type="hidden" name="itemId" value={item.id} />
+            <input type="hidden" name="status" value={item.status === "Open" ? "Closed" : "Open"} />
+            <button>{item.status === "Open" ? "Close" : "Reopen"}</button>
+          </form>
+        </div>
+      ) : null}
       <div className="card-meta">
         <span>{item.id}</span>
         <span>{item.owner ?? "Owner unassigned"}</span>
@@ -67,6 +86,17 @@ export function KnowledgeCard({ item }: { item: KnowledgeItem }) {
           )}
         </details>
       </div>
+      <details className="item-notes">
+        <summary>{item.notes.length ? `Notes (${item.notes.length})` : "Add note"}</summary>
+        <NotesSection
+          notes={item.notes}
+          parentField="itemId"
+          parentId={item.id}
+          addAction={addItemNoteAction}
+          editAction={updateItemNoteAction}
+          deleteAction={deleteItemNoteAction}
+        />
+      </details>
       <details className="evidence">
         <summary>Inspect evidence</summary>
         <blockquote>“{item.evidence.quote}”</blockquote>

@@ -22,10 +22,13 @@ from app.models import (
     ItemType,
     KnowledgeItem,
     Meeting,
+    NoteCreate,
+    OpenClosed,
     PriorityOverrideUpdate,
     ReviewCandidate,
     ReviewStatusUpdate,
     SearchResult,
+    StatusUpdate,
     Topic,
     TopicCreate,
     TopicMerge,
@@ -100,10 +103,13 @@ def get_meeting() -> Meeting:
 def get_items(
     item_type: ItemType | None = Query(default=None, alias="type"),
     priority: TopicPriorityLevel | None = Query(default=None),
+    status: OpenClosed | None = Query(default=None),
 ) -> list[KnowledgeItem]:
     items = data.all_items(data.load_meetings())
     if item_type is not None:
         items = [item for item in items if item.type == item_type]
+    if status is not None:
+        items = [item for item in items if item.status == status]
     if priority is not None:
         items = [item for item in items if item.effective_priority == priority]
     return items
@@ -271,6 +277,70 @@ def set_item_priority_override(item_id: str, payload: PriorityOverrideUpdate) ->
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
     return item
+
+
+@app.patch("/api/items/{item_id}/status", response_model=KnowledgeItem)
+def set_item_status(item_id: str, payload: StatusUpdate) -> KnowledgeItem:
+    item = data.set_item_status(item_id, payload.status)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+@app.patch("/api/topics/{topic_id}/status", response_model=Topic)
+def set_topic_status(topic_id: str, payload: StatusUpdate) -> Topic:
+    topic = data.set_topic_status(topic_id, payload.status)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+@app.post("/api/items/{item_id}/notes", response_model=KnowledgeItem)
+def add_item_note(item_id: str, payload: NoteCreate) -> KnowledgeItem:
+    item = data.add_item_note(item_id, payload.body)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+@app.delete("/api/items/{item_id}/notes/{note_id}", response_model=KnowledgeItem)
+def delete_item_note(item_id: str, note_id: str) -> KnowledgeItem:
+    item = data.delete_item_note(item_id, note_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+@app.patch("/api/items/{item_id}/notes/{note_id}", response_model=KnowledgeItem)
+def update_item_note(item_id: str, note_id: str, payload: NoteCreate) -> KnowledgeItem:
+    item = data.update_item_note(item_id, note_id, payload.body)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+@app.patch("/api/topics/{topic_id}/notes/{note_id}", response_model=Topic)
+def update_topic_note(topic_id: str, note_id: str, payload: NoteCreate) -> Topic:
+    topic = data.update_topic_note(topic_id, note_id, payload.body)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+@app.post("/api/topics/{topic_id}/notes", response_model=Topic)
+def add_topic_note(topic_id: str, payload: NoteCreate) -> Topic:
+    topic = data.add_topic_note(topic_id, payload.body)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+@app.delete("/api/topics/{topic_id}/notes/{note_id}", response_model=Topic)
+def delete_topic_note(topic_id: str, note_id: str) -> Topic:
+    topic = data.delete_topic_note(topic_id, note_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
 
 
 @app.get("/api/review", response_model=list[ReviewCandidate])

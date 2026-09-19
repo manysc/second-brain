@@ -306,11 +306,11 @@ def _find_similar_item_in_meeting(session: Session, meeting_id: str, embedding: 
 
 
 _ITEM_UPDATE_COLS = (
-    # topic_id, theme (kept equal to the topic name) and suggested_topic intentionally
-    # excluded: preserves manual topic reassignments and proposal decisions across re-ingestion
+    # topic_id, theme (kept equal to the topic name), suggested_topic and status intentionally
+    # excluded: preserves manual topic reassignments, proposal decisions and open/closed status
+    # across re-ingestion (status is still set on first insert)
     "type",
     "description",
-    "status",
     "confidence",
     "owner",
     "stakeholders",
@@ -382,6 +382,8 @@ def _item_row_differs(row: KnowledgeItemRow, fields: dict[str, object]) -> bool:
     # edited from HIGH down to a lower confidence isn't picked up.
     if row.confidence == "HIGH":
         fields = {column: value for column, value in fields.items() if column != "confidence"}
+    # status is human-owned after first insert (not in _ITEM_UPDATE_COLS), so it can't count as a diff
+    fields = {column: value for column, value in fields.items() if column != "status"}
     return _row_differs(row, fields)
 
 

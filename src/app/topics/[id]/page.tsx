@@ -7,7 +7,16 @@ import { SuggestedItemTopics } from "@/components/SuggestedItemTopics";
 import { PriorityDetailsBadge, PriorityDetailsPanel, PriorityDetailsProvider } from "@/components/PriorityDetails";
 import { PriorityOverrideForm } from "@/components/PriorityOverrideForm";
 import { getMeetings, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
-import { deleteTopicAction, recalculatePriorityAction, updateTopicAction } from "@/lib/actions";
+import { NotesSection } from "@/components/NotesSection";
+import {
+  addTopicNoteAction,
+  deleteTopicAction,
+  deleteTopicNoteAction,
+  recalculatePriorityAction,
+  setTopicStatusAction,
+  updateTopicAction,
+  updateTopicNoteAction,
+} from "@/lib/actions";
 import type { KnowledgeItem } from "@/lib/domain";
 
 export default async function TopicDetail({
@@ -48,7 +57,7 @@ export default async function TopicDetail({
       <div className="page-head compact">
         <div>
           <Link className="back-link" href="/topics">← Topics</Link>
-          <p className="eyebrow">Topic intelligence / Active</p>
+          <p className="eyebrow">Topic intelligence / {topic.status === "Open" ? "Active" : "Closed"}</p>
           <h1>{topic.name}</h1>
           <p className="lede">{topic.items.length} evidence-backed items currently contribute to this thread.</p>
         </div>
@@ -60,6 +69,11 @@ export default async function TopicDetail({
           <input type="hidden" name="topicId" value={topic.id} />
           <input name="name" defaultValue={topic.name} required />
           <button>Rename</button>
+        </form>
+        <form action={setTopicStatusAction}>
+          <input type="hidden" name="topicId" value={topic.id} />
+          <input type="hidden" name="status" value={topic.status === "Open" ? "Closed" : "Open"} />
+          <button>{topic.status === "Open" ? "Close topic" : "Reopen topic"}</button>
         </form>
         <form action={deleteTopicAction}>
           <input type="hidden" name="topicId" value={topic.id} />
@@ -114,6 +128,17 @@ export default async function TopicDetail({
         <PriorityOverrideForm topicId={topic.id} priority={topic.priority} />
       </section>
       </PriorityDetailsPanel>
+      <section className="priority-section topic-notes">
+        <p className="eyebrow">Notes{topic.notes.length ? ` (${topic.notes.length})` : ""}</p>
+        <NotesSection
+          notes={topic.notes}
+          parentField="topicId"
+          parentId={topic.id}
+          addAction={addTopicNoteAction}
+          editAction={updateTopicNoteAction}
+          deleteAction={deleteTopicNoteAction}
+        />
+      </section>
       {topic.name === "Uncategorized" ? <SuggestedItemTopics suggestions={suggestions} /> : null}
       <section className="topic-situation">
         <p className="eyebrow">Current situation</p>

@@ -4,19 +4,27 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   acceptTopicProposal,
+  addItemNote,
+  addTopicNote,
   createTopic,
+  deleteItemNote,
   deleteTopic,
+  deleteTopicNote,
   mergeTopics,
   moveItemsTopic,
   moveItemTopic,
   recalculateTopicPriority,
   rejectTopicProposal,
   setItemPriorityOverride,
+  setItemStatus,
   setTopicPriorityOverride,
+  setTopicStatus,
+  updateItemNote,
   updateReviewStatus,
   updateTopic,
+  updateTopicNote,
 } from "./api";
-import type { TopicPriorityLevel } from "./domain";
+import type { OpenClosed, TopicPriorityLevel } from "./domain";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong";
@@ -246,4 +254,98 @@ export async function clearItemPriorityOverrideAction(formData: FormData): Promi
 
   await setItemPriorityOverride(itemId, null, null);
   revalidateItemPriorityAffectedPaths();
+}
+
+export async function setItemStatusAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const status = String(formData.get("status") ?? "") as OpenClosed;
+
+  await setItemStatus(itemId, status);
+  revalidateItemPriorityAffectedPaths();
+  revalidatePath("/briefing");
+}
+
+export async function setTopicStatusAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const status = String(formData.get("status") ?? "") as OpenClosed;
+
+  try {
+    await setTopicStatus(topicId, status);
+  } catch (err) {
+    redirect(`/topics/${encodeURIComponent(topicId)}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePriorityAffectedPaths(topicId);
+  redirect(`/topics/${encodeURIComponent(topicId)}`);
+}
+
+export async function addItemNoteAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) return;
+
+  await addItemNote(itemId, body);
+  revalidateItemPriorityAffectedPaths();
+}
+
+export async function deleteItemNoteAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const noteId = String(formData.get("noteId") ?? "");
+
+  await deleteItemNote(itemId, noteId);
+  revalidateItemPriorityAffectedPaths();
+}
+
+export async function addTopicNoteAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) redirect(`/topics/${encodeURIComponent(topicId)}?error=${encodeURIComponent("Note cannot be empty")}`);
+
+  try {
+    await addTopicNote(topicId, body);
+  } catch (err) {
+    redirect(`/topics/${encodeURIComponent(topicId)}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath("/topics");
+  revalidatePath(`/topics/${topicId}`);
+  redirect(`/topics/${encodeURIComponent(topicId)}`);
+}
+
+export async function deleteTopicNoteAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const noteId = String(formData.get("noteId") ?? "");
+
+  try {
+    await deleteTopicNote(topicId, noteId);
+  } catch (err) {
+    redirect(`/topics/${encodeURIComponent(topicId)}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath("/topics");
+  revalidatePath(`/topics/${topicId}`);
+  redirect(`/topics/${encodeURIComponent(topicId)}`);
+}
+
+export async function updateItemNoteAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const noteId = String(formData.get("noteId") ?? "");
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) return;
+
+  await updateItemNote(itemId, noteId, body);
+  revalidateItemPriorityAffectedPaths();
+}
+
+export async function updateTopicNoteAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const noteId = String(formData.get("noteId") ?? "");
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) redirect(`/topics/${encodeURIComponent(topicId)}?error=${encodeURIComponent("Note cannot be empty")}`);
+
+  try {
+    await updateTopicNote(topicId, noteId, body);
+  } catch (err) {
+    redirect(`/topics/${encodeURIComponent(topicId)}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath("/topics");
+  revalidatePath(`/topics/${topicId}`);
+  redirect(`/topics/${encodeURIComponent(topicId)}`);
 }

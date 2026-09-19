@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ItemType = Literal["IDEA", "DECISION", "ACTION", "QUESTION"]
 Confidence = Literal["HIGH", "MEDIUM", "LOW"]
 ReviewStatus = Literal["PENDING", "ACCEPTED", "REJECTED"]
 TopicPriorityLevel = Literal["CRITICAL", "MAJOR", "MINOR"]
 PriorityConfidence = Literal["HIGH", "MEDIUM", "LOW"]
+OpenClosed = Literal["Open", "Closed"]
 
 
 class CamelModel(BaseModel):
@@ -27,6 +28,24 @@ class ManualPriorityOverride(CamelModel):
     priority: TopicPriorityLevel
     reason: str | None = None
     overridden_at: str = Field(alias="overriddenAt")
+
+
+class Note(CamelModel):
+    id: str
+    body: str
+    created_at: str = Field(alias="createdAt")
+
+
+class NoteCreate(CamelModel):
+    body: str = Field(min_length=1, max_length=10000)
+
+    @field_validator("body")
+    @classmethod
+    def _strip_body(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Note cannot be empty")
+        return v
 
 
 class KnowledgeItem(CamelModel):
@@ -48,6 +67,7 @@ class KnowledgeItem(CamelModel):
     # Option A: items have no automatic scoring of their own - override wins, else inherited from topic
     effective_priority: TopicPriorityLevel | None = Field(default=None, alias="effectivePriority")
     manual_override: ManualPriorityOverride | None = Field(default=None, alias="manualOverride")
+    notes: list[Note] = Field(default_factory=list)
 
 
 class ReviewCandidate(CamelModel):
@@ -119,12 +139,18 @@ class PriorityOverrideUpdate(CamelModel):
     reason: str | None = None
 
 
+class StatusUpdate(CamelModel):
+    status: OpenClosed
+
+
 class Topic(CamelModel):
     id: str
     name: str
+    status: OpenClosed = "Open"
     items: list[KnowledgeItem]
     stakeholders: list[str]
     priority: TopicPriorityInfo | None = None
+    notes: list[Note] = Field(default_factory=list)
 
 
 class TopicCreate(CamelModel):

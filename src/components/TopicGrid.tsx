@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Topic } from "@/lib/domain";
 import { mergeTopicsAction } from "@/lib/actions";
 import { PriorityBadge } from "@/components/PriorityBadge";
+import { StatusBadge } from "@/components/StatusBadge";
 
 // HTML5 drag-and-drop data type used to identify the dragged topic across cards
 const DRAG_DATA_TYPE = "text/topic-id";
@@ -61,6 +62,7 @@ export function TopicGrid({ topics }: { topics: Topic[] }) {
           >
             <div className="topic-top">
               <PriorityBadge priority={topic.priority} />
+              <StatusBadge status={topic.status} />
               {isUncategorized ? <span className="drag-hint">Drag onto a topic to merge</span> : null}
             </div>
             <h2>{topic.name}</h2>

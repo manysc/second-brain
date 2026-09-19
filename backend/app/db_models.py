@@ -1,7 +1,7 @@
 """SQLAlchemy ORM tables backing the domain models in app/models.py."""
 from __future__ import annotations
 
-from sqlalchemy import ARRAY, Float, ForeignKey, String, Text
+from sqlalchemy import ARRAY, CheckConstraint, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -33,8 +33,12 @@ class TopicRow(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True)
+    status: Mapped[str] = mapped_column(String, default="Open", server_default="Open")
 
     items: Mapped[list["KnowledgeItemRow"]] = relationship(back_populates="topic")
+    notes: Mapped[list["NoteRow"]] = relationship(
+        back_populates="topic", cascade="all, delete-orphan", lazy="selectin", order_by="NoteRow.created_at"
+    )
 
     # -- automatic priority classification (calculated_* set only by topic_priority.py) --
     calculated_priority: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -87,6 +91,9 @@ class KnowledgeItemRow(Base):
 
     meeting: Mapped[MeetingRow] = relationship(back_populates="items")
     topic: Mapped[TopicRow | None] = relationship(back_populates="items")
+    notes: Mapped[list["NoteRow"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan", lazy="selectin", order_by="NoteRow.created_at"
+    )
 
 
 class ReviewCandidateRow(Base):
@@ -122,3 +129,23 @@ class TopicPriorityHistoryRow(Base):
     primary_drivers: Mapped[list[str]] = mapped_column(ARRAY(String))
     trigger: Mapped[str] = mapped_column(String)
     source_knowledge_item_ids: Mapped[list[str]] = mapped_column(ARRAY(String))
+
+
+class NoteRow(Base):
+    """A human-written note attached to exactly one knowledge item or topic; independent of ingestion."""
+
+    __tablename__ = "notes"
+    __table_args__ = (
+        CheckConstraint("(item_id IS NULL) <> (topic_id IS NULL)", name="notes_exactly_one_parent"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("knowledge_items.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    topic_id: Mapped[str | None] = mapped_column(ForeignKey("topics.id", ondelete="CASCADE"), nullable=True, index=True)
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String)
+
+    item: Mapped[KnowledgeItemRow | None] = relationship(back_populates="notes")
+    topic: Mapped[TopicRow | None] = relationship(back_populates="notes")

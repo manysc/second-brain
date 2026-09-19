@@ -10,7 +10,14 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app import db, embeddings, topic_priority
-from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicPriorityHistoryRow, TopicRow
+from app.db_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    NoteRow,
+    ReviewCandidateRow,
+    TopicPriorityHistoryRow,
+    TopicRow,
+)
 from app.models import (
     Evidence,
     FollowUpRelatedItem,
@@ -25,6 +32,7 @@ from app.models import (
     KnowledgeItem,
     ManualPriorityOverride,
     Meeting,
+    Note,
     ReviewCandidate,
     ReviewStatus,
     SemanticContribution,
@@ -88,6 +96,10 @@ def _item_effective_priority(row: KnowledgeItemRow) -> tuple[str | None, ManualP
     return None, None
 
 
+def _note_from_row(row: NoteRow) -> Note:
+    return Note(id=row.id, body=row.body, created_at=row.created_at)
+
+
 def _item_from_row(row: KnowledgeItemRow) -> KnowledgeItem:
     effective_priority, manual_override = _item_effective_priority(row)
     return KnowledgeItem(
@@ -95,7 +107,8 @@ def _item_from_row(row: KnowledgeItemRow) -> KnowledgeItem:
         type=row.type,
         description=row.description,
         theme=row.theme,
-        status=row.status,
+        # legacy free-text statuses ("Answered", "Resolved", ...) collapse to the binary Open/Closed
+        status="Closed" if topic_priority.is_resolved_status(row.status) else "Open",
         confidence=row.confidence,
         owner=row.owner,
         stakeholders=list(row.stakeholders),
@@ -113,6 +126,7 @@ def _item_from_row(row: KnowledgeItemRow) -> KnowledgeItem:
         meeting_id=row.meeting_id,
         effective_priority=effective_priority,
         manual_override=manual_override,
+        notes=[_note_from_row(n) for n in row.notes],
     )
 
 
@@ -349,9 +363,11 @@ def _topic_from_row(row: TopicRow) -> Topic:
     return Topic(
         id=row.id,
         name=row.name,
+        status=row.status,
         items=items,
         stakeholders=list(dict.fromkeys(s for item in items for s in item.stakeholders)),
         priority=_priority_info_from_row(row),
+        notes=[_note_from_row(n) for n in row.notes],
     )
 
 
@@ -493,6 +509,94 @@ def set_item_priority_override(item_id: str, priority: str | None, reason: str |
         return _item_from_row(row)
 
 
+def set_item_status(item_id: str, status: str) -> KnowledgeItem | None:
+    with db.get_session() as session:
+        row = session.get(KnowledgeItemRow, item_id)
+        if row is None:
+            return None
+        row.status = status
+        session.commit()
+        session.refresh(row)
+        return _item_from_row(row)
+
+
+def set_topic_status(topic_id: str, status: str) -> Topic | None:
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        row.status = status
+        session.commit()
+    return get_topic_by_id(topic_id)
+
+
+def add_item_note(item_id: str, body: str) -> KnowledgeItem | None:
+    with db.get_session() as session:
+        row = session.get(KnowledgeItemRow, item_id)
+        if row is None:
+            return None
+        row.notes.append(NoteRow(id=uuid.uuid4().hex, body=body, created_at=datetime.now(timezone.utc).isoformat()))
+        session.commit()
+        session.refresh(row)
+        return _item_from_row(row)
+
+
+def delete_item_note(item_id: str, note_id: str) -> KnowledgeItem | None:
+    with db.get_session() as session:
+        row = session.get(KnowledgeItemRow, item_id)
+        if row is None:
+            return None
+        row.notes = [n for n in row.notes if n.id != note_id]
+        session.commit()
+        session.refresh(row)
+        return _item_from_row(row)
+
+
+def update_item_note(item_id: str, note_id: str, body: str) -> KnowledgeItem | None:
+    with db.get_session() as session:
+        row = session.get(KnowledgeItemRow, item_id)
+        if row is None:
+            return None
+        for note in row.notes:
+            if note.id == note_id:
+                note.body = body
+        session.commit()
+        session.refresh(row)
+        return _item_from_row(row)
+
+
+def update_topic_note(topic_id: str, note_id: str, body: str) -> Topic | None:
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        for note in row.notes:
+            if note.id == note_id:
+                note.body = body
+        session.commit()
+    return get_topic_by_id(topic_id)
+
+
+def add_topic_note(topic_id: str, body: str) -> Topic | None:
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        row.notes.append(NoteRow(id=uuid.uuid4().hex, body=body, created_at=datetime.now(timezone.utc).isoformat()))
+        session.commit()
+    return get_topic_by_id(topic_id)
+
+
+def delete_topic_note(topic_id: str, note_id: str) -> Topic | None:
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        row.notes = [n for n in row.notes if n.id != note_id]
+        session.commit()
+    return get_topic_by_id(topic_id)
+
+
 def get_priority_history(topic_id: str) -> list[TopicPriorityHistoryEntry]:
     with db.get_session() as session:
         stmt = (
@@ -632,6 +736,9 @@ def merge_topics(source_topic_id: str, target_topic_id: str) -> Topic:
             .where(KnowledgeItemRow.topic_id == source_topic_id)
             .values(topic_id=target_topic_id, theme=target.name)
         )
+        # keep the source topic's notes: repoint them before the delete cascades over them
+        session.execute(update(NoteRow).where(NoteRow.topic_id == source_topic_id).values(topic_id=target_topic_id))
+        session.expire(source)
         session.delete(source)
         session.commit()
 

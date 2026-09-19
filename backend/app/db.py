@@ -41,6 +41,12 @@ def init_db() -> None:
         _backfill_topic_priority(conn)
         _backfill_item_priority_override(conn)
         _backfill_suggested_topic(conn)
+        _backfill_topic_status(conn)
+
+
+def _backfill_topic_status(conn: Connection) -> None:
+    """Idempotent migration: adds topics.status (Open/Closed)."""
+    conn.execute(text("ALTER TABLE topics ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'Open'"))
 
 
 def _backfill_suggested_topic(conn: Connection) -> None:

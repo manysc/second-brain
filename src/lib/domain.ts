@@ -8,12 +8,18 @@ export type Evidence = {
   context: string | null;
 };
 
+export type Note = {
+  id: string;
+  body: string;
+  createdAt: string;
+};
+
 export type KnowledgeItem = {
   id: string;
   type: ItemType;
   description: string;
   theme: string | null;
-  status: string;
+  status: OpenClosed;
   confidence: Confidence;
   owner: string | null;
   stakeholders: string[];
@@ -27,6 +33,7 @@ export type KnowledgeItem = {
   // Option A: items have no automatic scoring of their own - override wins, else inherited from topic
   effectivePriority: TopicPriorityLevel | null;
   manualOverride: ManualPriorityOverride | null;
+  notes: Note[];
 };
 
 export type ReviewCandidate = {
@@ -112,12 +119,16 @@ export type TopicPriorityHistoryEntry = {
   sourceKnowledgeItemIds: string[];
 };
 
+export type OpenClosed = "Open" | "Closed";
+
 export type Topic = {
   id: string;
   name: string;
+  status: OpenClosed;
   items: KnowledgeItem[];
   stakeholders: string[];
   priority: TopicPriorityInfo | null;
+  notes: Note[];
 };
 
 export type SearchResult = {

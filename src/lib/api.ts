@@ -6,6 +6,7 @@ import type {
   ItemTopicSuggestion,
   KnowledgeItem,
   Meeting,
+  OpenClosed,
   ReviewCandidate,
   SearchResult,
   Topic,
@@ -174,6 +175,40 @@ export function setItemPriorityOverride(
   reason: string | null
 ): Promise<KnowledgeItem> {
   return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(id)}/priority-override`, "PATCH", { priority, reason });
+}
+
+export function setItemStatus(id: string, status: OpenClosed): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(id)}/status`, "PATCH", { status });
+}
+
+export function setTopicStatus(id: string, status: OpenClosed): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/status`, "PATCH", { status });
+}
+
+export function addItemNote(id: string, body: string): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(id)}/notes`, "POST", { body });
+}
+
+export function deleteItemNote(id: string, noteId: string): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, "DELETE");
+}
+
+export function addTopicNote(id: string, body: string): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/notes`, "POST", { body });
+}
+
+export function deleteTopicNote(id: string, noteId: string): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, "DELETE");
+}
+
+export function updateItemNote(id: string, noteId: string, body: string): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, "PATCH", {
+    body,
+  });
+}
+
+export function updateTopicNote(id: string, noteId: string, body: string): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, "PATCH", { body });
 }
 
 export function getRecentPriorityEscalations(days?: number): Promise<TopicPriorityHistoryEntry[]> {
