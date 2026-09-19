@@ -122,3 +122,48 @@ def test_ingestion_is_idempotent(seeded_meetings):
     with db.get_session() as session:
         after = len(session.execute(select(KnowledgeItemRow)).scalars().all())
     assert before == after
+
+
+def _reingest_fixtures(session) -> tuple[int, bool]:
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        _upload_fixtures(client)
+        result = ingest._ingest_all(session)
+        session.commit()
+    return result
+
+
+def _record_embeddings(monkeypatch) -> list[list[str]]:
+    embedded: list[list[str]] = []
+    real_embed = ingest.embeddings.embed_texts
+    monkeypatch.setattr(ingest.embeddings, "embed_texts", lambda texts: embedded.append(texts) or real_embed(texts))
+    return embedded
+
+
+def test_reingesting_unchanged_meetings_skips_stored_items_and_reports_no_change(seeded_meetings, monkeypatch):
+    embedded = _record_embeddings(monkeypatch)
+    with db.get_session() as session:
+        stored = {row.description for row in session.execute(select(KnowledgeItemRow)).scalars()}
+        count, changed = _reingest_fixtures(session)
+    assert count == 3
+    assert changed is False
+    # only near-duplicates of another extract's items (never stored, so re-detected each run) may be embedded
+    assert not stored & {text for batch in embedded for text in batch}
+
+
+def test_reingesting_edited_description_reembeds_only_that_item(seeded_meetings, monkeypatch):
+    with db.get_session() as session:
+        row = session.execute(
+            select(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id == "meeting-extract").limit(1)
+        ).scalar_one()
+        item_id, original = row.id, row.description
+        row.description = "stale description"
+        session.commit()
+
+    embedded = _record_embeddings(monkeypatch)
+    with db.get_session() as session:
+        _, changed = _reingest_fixtures(session)
+    assert changed is True
+    assert original in {text for batch in embedded for text in batch}
+    with db.get_session() as session:
+        assert session.get(KnowledgeItemRow, item_id).description == original

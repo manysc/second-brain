@@ -1,6 +1,7 @@
 """REST API exposing the meeting knowledge base. Replaces the logic that used to live in src/lib/data.ts."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -43,17 +44,25 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def _run_startup_ingest() -> None:
+    try:
+        count = ingest.ingest_and_commit()
+        logger.info("startup ingestion: %d meeting(s)", count)
+    except Exception:
+        # SeaweedFS/network hiccups shouldn't stop the API from serving existing Postgres data
+        logger.exception("startup ingestion failed; continuing with existing data")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db.init_db()
+    ingest_task: asyncio.Task[None] | None = None
     if os.environ.get("INGEST_ON_STARTUP", "true").lower() not in ("false", "0"):
-        try:
-            count = ingest.ingest_and_commit()
-            logger.info("startup ingestion: %d meeting(s)", count)
-        except Exception:
-            # SeaweedFS/network hiccups shouldn't stop the API from serving existing Postgres data
-            logger.exception("startup ingestion failed; continuing with existing data")
+        # off the startup path: the API serves existing Postgres data while ingestion catches up
+        ingest_task = asyncio.create_task(asyncio.to_thread(_run_startup_ingest))
     yield
+    if ingest_task is not None and not ingest_task.done():
+        ingest_task.cancel()
 
 
 app = FastAPI(title="second-brain backend", lifespan=lifespan)

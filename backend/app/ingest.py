@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 from typing import Iterable
@@ -14,7 +15,7 @@ from typing import Iterable
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, defer, selectinload
 
 from app import db, embeddings, s3_store
 from app.data import (
@@ -304,143 +305,212 @@ def _find_similar_item_in_meeting(session: Session, meeting_id: str, embedding: 
     return row if distance < DUPLICATE_MATCH_THRESHOLD else None
 
 
-def upsert_meeting(session: Session, meeting: Meeting) -> None:
-    meeting_stmt = pg_insert(MeetingRow).values(
-        id=meeting.id, title=meeting.title, date=meeting.date, source_url=meeting.source_url
-    )
-    meeting_stmt = meeting_stmt.on_conflict_do_update(
-        index_elements=["id"],
-        set_={"title": meeting_stmt.excluded.title, "date": meeting_stmt.excluded.date, "source_url": meeting_stmt.excluded.source_url},
-    )
-    session.execute(meeting_stmt)
+_ITEM_UPDATE_COLS = (
+    # topic_id, theme (kept equal to the topic name) and suggested_topic intentionally
+    # excluded: preserves manual topic reassignments and proposal decisions across re-ingestion
+    "type",
+    "description",
+    "status",
+    "confidence",
+    "owner",
+    "stakeholders",
+    "due_date",
+    "due_date_source_text",
+    "rationale",
+    "resolution",
+    "evidence_speaker",
+    "evidence_timestamp",
+    "evidence_quote",
+    "evidence_context",
+    "related_ids",
+)
+
+# status is intentionally excluded: ingestion must not clobber a human review decision
+_CANDIDATE_UPDATE_COLS = (
+    "type",
+    "description",
+    "reason",
+    "confidence",
+    "evidence_speaker",
+    "evidence_timestamp",
+    "evidence_quote",
+    "evidence_context",
+)
+
+
+def _item_fields(item: KnowledgeItem) -> dict[str, object]:
+    return {
+        "type": item.type,
+        "description": item.description,
+        "status": item.status,
+        "confidence": item.confidence,
+        "owner": item.owner,
+        "stakeholders": item.stakeholders,
+        "due_date": item.due_date,
+        "due_date_source_text": item.due_date_source_text,
+        "rationale": item.rationale,
+        "resolution": item.resolution,
+        "evidence_speaker": item.evidence.speaker,
+        "evidence_timestamp": item.evidence.timestamp,
+        "evidence_quote": item.evidence.quote,
+        "evidence_context": item.evidence.context,
+        "related_ids": item.related_ids,
+    }
+
+
+def _candidate_fields(candidate: ReviewCandidate) -> dict[str, object]:
+    return {
+        "type": candidate.type,
+        "description": candidate.description,
+        "reason": candidate.reason,
+        "confidence": candidate.confidence,
+        "evidence_speaker": candidate.evidence.speaker,
+        "evidence_timestamp": candidate.evidence.timestamp,
+        "evidence_quote": candidate.evidence.quote,
+        "evidence_context": candidate.evidence.context,
+    }
+
+
+def _row_differs(row: object, fields: dict[str, object]) -> bool:
+    return any(getattr(row, column) != value for column, value in fields.items())
+
+
+def _item_row_differs(row: KnowledgeItemRow, fields: dict[str, object]) -> bool:
+    # a stored HIGH may be a near-duplicate reinforcement from a second extract (see upsert_meeting)
+    # rather than this extract's own value; treating that as a diff would revert it on every start
+    # and have the duplicate re-apply it, so the two would churn forever. Trade-off: an extract
+    # edited from HIGH down to a lower confidence isn't picked up.
+    if row.confidence == "HIGH":
+        fields = {column: value for column, value in fields.items() if column != "confidence"}
+    return _row_differs(row, fields)
+
+
+def upsert_meeting(session: Session, meeting: Meeting) -> bool:
+    """Upserts one meeting, skipping rows (and embedding work) that are already up to date.
+    Returns whether anything in the database was inserted or changed."""
+    changed = False
+
+    meeting_fields = {"title": meeting.title, "date": meeting.date, "source_url": meeting.source_url}
+    existing_meeting = session.get(MeetingRow, meeting.id)
+    if existing_meeting is None or _row_differs(existing_meeting, meeting_fields):
+        meeting_stmt = pg_insert(MeetingRow).values(id=meeting.id, **meeting_fields)
+        meeting_stmt = meeting_stmt.on_conflict_do_update(
+            index_elements=["id"],
+            set_={column: getattr(meeting_stmt.excluded, column) for column in meeting_fields},
+        )
+        session.execute(meeting_stmt)
+        changed = True
 
     if meeting.items:
-        item_vectors = embeddings.embed_texts([item.description for item in meeting.items])
-        matcher = _TopicMatcher(session)
-        existing_ids = {
-            row_id
-            for (row_id,) in session.execute(
-                select(KnowledgeItemRow.id).where(KnowledgeItemRow.id.in_([item.id for item in meeting.items]))
-            )
+        existing_rows = {
+            row.id: row
+            for row in session.execute(
+                select(KnowledgeItemRow)
+                .options(defer(KnowledgeItemRow.embedding))
+                .where(KnowledgeItemRow.id.in_([item.id for item in meeting.items]))
+            ).scalars()
         }
+        # a stored embedding stays valid unless the description changed, so only embed new/edited
+        # items - on an unchanged restart this skips loading the embedding model altogether
+        to_embed = [
+            item
+            for item in meeting.items
+            if item.id not in existing_rows or existing_rows[item.id].description != item.description
+        ]
+        vectors = dict(zip((item.id for item in to_embed), embeddings.embed_texts([i.description for i in to_embed])))
+        new_items = [item for item in meeting.items if item.id not in existing_rows]
+        matcher = _TopicMatcher(session) if new_items else None
         # resolved together (not one by one) so a related item later in the extract is still found;
         # an item skipped below as a near-duplicate keeps its slot here, which is harmless
-        assignments = matcher.resolve_batch(
-            [(item, vector) for item, vector in zip(meeting.items, item_vectors) if item.id not in existing_ids]
+        assignments = (
+            matcher.resolve_batch([(item, vectors[item.id]) for item in new_items]) if matcher is not None else {}
         )
-        for item, vector in zip(meeting.items, item_vectors):
-            if item.id not in existing_ids:
+        for item in meeting.items:
+            existing = existing_rows.get(item.id)
+            fields = _item_fields(item)
+            vector = vectors.get(item.id)
+            if existing is None:
+                assert vector is not None
                 duplicate = _find_similar_item_in_meeting(session, meeting.id, vector)
                 if duplicate is not None:
                     # a different LLM's near-duplicate of an item already ingested for this
                     # meeting - reinforce it instead of inserting a second, duplicate row
-                    duplicate.confidence = "HIGH"
+                    if duplicate.confidence != "HIGH":
+                        duplicate.confidence = "HIGH"
+                        changed = True
                     continue
+            elif vector is None and not _item_row_differs(existing, fields):
+                continue
             # only file genuinely new items - re-ingesting an item that already exists must not
             # undo a manual topic assignment or resolved proposal
             topic_id: str | None = None
             suggested_topic: str | None = None
             theme = item.theme
-            if item.id not in existing_ids:
+            if existing is None:
+                assert matcher is not None
                 topic_id, suggested_topic = assignments[item.id]
                 theme = matcher.name_of(topic_id)
+            values = {**fields, "embedding": vector} if vector is not None else fields
             item_stmt = pg_insert(KnowledgeItemRow).values(
-                id=item.id,
-                meeting_id=meeting.id,
-                topic_id=topic_id,
-                type=item.type,
-                description=item.description,
-                theme=theme,
-                suggested_topic=suggested_topic,
-                status=item.status,
-                confidence=item.confidence,
-                owner=item.owner,
-                stakeholders=item.stakeholders,
-                due_date=item.due_date,
-                due_date_source_text=item.due_date_source_text,
-                rationale=item.rationale,
-                resolution=item.resolution,
-                evidence_speaker=item.evidence.speaker,
-                evidence_timestamp=item.evidence.timestamp,
-                evidence_quote=item.evidence.quote,
-                evidence_context=item.evidence.context,
-                related_ids=item.related_ids,
-                embedding=vector,
+                id=item.id, meeting_id=meeting.id, topic_id=topic_id, theme=theme, suggested_topic=suggested_topic, **values
             )
             update_cols = {
                 col: getattr(item_stmt.excluded, col)
-                for col in (
-                    # topic_id, theme (kept equal to the topic name) and suggested_topic intentionally
-                    # excluded: preserves manual topic reassignments and proposal decisions across re-ingestion
-                    "type",
-                    "description",
-                    "status",
-                    "confidence",
-                    "owner",
-                    "stakeholders",
-                    "due_date",
-                    "due_date_source_text",
-                    "rationale",
-                    "resolution",
-                    "evidence_speaker",
-                    "evidence_timestamp",
-                    "evidence_quote",
-                    "evidence_context",
-                    "related_ids",
-                    "embedding",
-                )
+                for col in (*_ITEM_UPDATE_COLS, *(("embedding",) if vector is not None else ()))
             }
             item_stmt = item_stmt.on_conflict_do_update(index_elements=["id"], set_=update_cols)
             session.execute(item_stmt)
+            changed = True
 
-    for candidate in meeting.review_candidates:
-        candidate_stmt = pg_insert(ReviewCandidateRow).values(
-            id=candidate.id,
-            meeting_id=meeting.id,
-            type=candidate.type,
-            description=candidate.description,
-            reason=candidate.reason,
-            confidence=candidate.confidence,
-            evidence_speaker=candidate.evidence.speaker,
-            evidence_timestamp=candidate.evidence.timestamp,
-            evidence_quote=candidate.evidence.quote,
-            evidence_context=candidate.evidence.context,
-            status=candidate.status,
-        )
-        update_cols = {
-            col: getattr(candidate_stmt.excluded, col)
-            for col in (
-                "type",
-                "description",
-                "reason",
-                "confidence",
-                "evidence_speaker",
-                "evidence_timestamp",
-                "evidence_quote",
-                "evidence_context",
-                # status is intentionally excluded: ingestion must not clobber a human review decision
-            )
+    if meeting.review_candidates:
+        existing_candidates = {
+            row.id: row
+            for row in session.execute(
+                select(ReviewCandidateRow).where(
+                    ReviewCandidateRow.id.in_([candidate.id for candidate in meeting.review_candidates])
+                )
+            ).scalars()
         }
-        candidate_stmt = candidate_stmt.on_conflict_do_update(index_elements=["id"], set_=update_cols)
-        session.execute(candidate_stmt)
+        for candidate in meeting.review_candidates:
+            fields = _candidate_fields(candidate)
+            existing_candidate = existing_candidates.get(candidate.id)
+            if existing_candidate is not None and not _row_differs(existing_candidate, fields):
+                continue
+            candidate_stmt = pg_insert(ReviewCandidateRow).values(
+                id=candidate.id, meeting_id=meeting.id, status=candidate.status, **fields
+            )
+            update_cols = {col: getattr(candidate_stmt.excluded, col) for col in _CANDIDATE_UPDATE_COLS}
+            candidate_stmt = candidate_stmt.on_conflict_do_update(index_elements=["id"], set_=update_cols)
+            session.execute(candidate_stmt)
+            changed = True
+
+    return changed
+
+
+def _ingest_all(session: Session) -> tuple[int, bool]:
+    keys = s3_store.list_extract_keys()
+    count = 0
+    changed = False
+    # extracts are downloaded/parsed concurrently, but upserted sequentially in key order so topic
+    # matching (which depends on what earlier extracts filed) stays deterministic
+    with ThreadPoolExecutor(max_workers=min(8, len(keys) or 1)) as pool:
+        for meeting in pool.map(parse_meeting_from_s3, keys):
+            changed |= upsert_meeting(session, meeting)
+            count += 1
+    return count, changed
 
 
 def ingest_all_from_s3(session: Session) -> int:
-    count = 0
-    for key in s3_store.list_extract_keys():
-        meeting = parse_meeting_from_s3(key)
-        upsert_meeting(session, meeting)
-        count += 1
-    return count
+    return _ingest_all(session)[0]
 
 
 def ingest_and_commit() -> int:
     """Opens a session, ingests everything from S3, and commits. Shared by the FastAPI startup
     hook and the manual scripts/ingest_to_postgres.py CLI entrypoint."""
     with db.get_session() as session:
-        count = ingest_all_from_s3(session)
+        count, changed = _ingest_all(session)
         session.commit()
-    if count:
+    if changed:
         # bulk load, not a fine-grained edit - recalculating every topic is the documented
         # exception to "recalculate only affected topics" (spec section 21)
         from app import data
