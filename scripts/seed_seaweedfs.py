@@ -1,4 +1,4 @@
-"""Dev bootstrap: create the configured bucket and upload the sample meeting extract files.
+"""Dev bootstrap: create the configured bucket and upload every meeting extract JSON found in data/.
 
 Usage (from repo root, with the seaweedfs docker-compose service running):
     python scripts/seed_seaweedfs.py
@@ -17,11 +17,6 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
 load_dotenv(REPO_ROOT / "backend" / ".env")
-FILES_TO_SEED = [
-    "meeting-extract.json",
-    "MS-PS_1-1_Meeting-Extract_082126.json",
-    "MS-PS_1-1_Meeting-Extract_082726.json",
-]
 
 
 def _client():
@@ -48,12 +43,11 @@ def main() -> None:
     client = _client()
     _ensure_bucket(client, bucket)
 
-    for filename in FILES_TO_SEED:
-        source = DATA_DIR / filename
-        if not source.exists():
-            print(f"skip (not found): {source}", file=sys.stderr)
-            continue
-        key = f"{prefix}{filename}"
+    sources = sorted(DATA_DIR.glob("*.json"))
+    if not sources:
+        print(f"no *.json files found in {DATA_DIR}", file=sys.stderr)
+    for source in sources:
+        key = f"{prefix}{source.name}"
         client.upload_file(str(source), bucket, key)
         print(f"uploaded s3://{bucket}/{key}")
 

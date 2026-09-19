@@ -1,0 +1,460 @@
+"schema_version": "1.0",
+  "meeting": {
+    "meeting_id": "synthetic-main",
+    "title": "Synthetic Planning Meeting",
+    "date": "2026-08-20",
+    "source_url": "https://example.com/recordings/synthetic-main"
+  },
+  "ideas": [
+    {
+      "candidate_id": "I-001",
+      "type": "Idea",
+      "description": "Idea 1: explore a self-serve Onboarding dashboard for customers.",
+      "theme": "Onboarding",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:01:00",
+        "quote": "Idea 1: explore a self-serve Onboarding dashboard for customers.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    },
+    {
+      "candidate_id": "I-002",
+      "type": "Idea",
+      "description": "Idea 2: explore a self-serve Infrastructure dashboard for customers.",
+      "theme": "Infrastructure",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Marco",
+        "timestamp": "00:02:00",
+        "quote": "Idea 2: explore a self-serve Infrastructure dashboard for customers.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    }
+  ],
+  "decisions": [
+    {
+      "candidate_id": "D-001",
+      "type": "Decision",
+      "description": "Decision 1: adopt a new approach for Billing work this quarter.",
+      "theme": "Billing",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:11:00",
+        "quote": "Decision 1: adopt a new approach for Billing work this quarter.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [
+        "A-002",
+        "Q-001"
+      ],
+      "decision_owner": "Alice"
+    },
+    {
+      "candidate_id": "D-002",
+      "type": "Decision",
+      "description": "Decision 2: adopt a new approach for Onboarding work this quarter.",
+      "theme": "Onboarding",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Marco",
+        "timestamp": "00:12:00",
+        "quote": "Decision 2: adopt a new approach for Onboarding work this quarter.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "decision_owner": "Marco"
+    },
+    {
+      "candidate_id": "D-003",
+      "type": "Decision",
+      "description": "Decision 3: adopt a new approach for Infrastructure work this quarter.",
+      "theme": "Infrastructure",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Dana",
+        "timestamp": "00:13:00",
+        "quote": "Decision 3: adopt a new approach for Infrastructure work this quarter.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "decision_owner": "Dana"
+    },
+    {
+      "candidate_id": "D-004",
+      "type": "Decision",
+      "description": "Decision 4: adopt a new approach for Hiring work this quarter.",
+      "theme": "Hiring",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Priya",
+        "timestamp": "00:14:00",
+        "quote": "Decision 4: adopt a new approach for Hiring work this quarter.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [
+        "A-001",
+        "A-009",
+        "A-010"
+      ],
+      "decision_owner": "Priya"
+    },
+    {
+      "candidate_id": "D-005",
+      "type": "Decision",
+      "description": "Decision 5: adopt a new approach for Roadmap work this quarter.",
+      "theme": "Roadmap",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:15:00",
+        "quote": "Decision 5: adopt a new approach for Roadmap work this quarter.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "decision_owner": "Alice"
+    }
+  ],
+  "actions": [
+    {
+      "candidate_id": "A-001",
+      "type": "Action",
+      "description": "Action 1: Alice to follow up on Onboarding task 1.",
+      "theme": "Onboarding",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:21:00",
+        "quote": "Action 1: Alice to follow up on Onboarding task 1.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Alice",
+      "due_date": "2026-09-01"
+    },
+    {
+      "candidate_id": "A-002",
+      "type": "Action",
+      "description": "Action 2: Marco to follow up on Infrastructure task 2.",
+      "theme": "Infrastructure",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Marco",
+        "timestamp": "00:22:00",
+        "quote": "Action 2: Marco to follow up on Infrastructure task 2.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Marco",
+      "due_date": "2026-09-02"
+    },
+    {
+      "candidate_id": "A-003",
+      "type": "Action",
+      "description": "Action 3: Dana to follow up on Hiring task 3.",
+      "theme": "Hiring",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Dana",
+        "timestamp": "00:23:00",
+        "quote": "Action 3: Dana to follow up on Hiring task 3.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Dana",
+      "due_date": "2026-09-03"
+    },
+    {
+      "candidate_id": "A-004",
+      "type": "Action",
+      "description": "Action 4: Priya to follow up on Roadmap task 4.",
+      "theme": "Roadmap",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Priya",
+        "timestamp": "00:24:00",
+        "quote": "Action 4: Priya to follow up on Roadmap task 4.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Priya",
+      "due_date": "2026-09-04"
+    },
+    {
+      "candidate_id": "A-005",
+      "type": "Action",
+      "description": "Action 5: Alice to follow up on Billing task 5.",
+      "theme": "Billing",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:25:00",
+        "quote": "Action 5: Alice to follow up on Billing task 5.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Alice",
+      "due_date": "2026-09-05"
+    },
+    {
+      "candidate_id": "A-006",
+      "type": "Action",
+      "description": "Action 6: Marco to follow up on Onboarding task 6.",
+      "theme": "Onboarding",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Marco",
+        "timestamp": "00:26:00",
+        "quote": "Action 6: Marco to follow up on Onboarding task 6.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Marco",
+      "due_date": "2026-09-06"
+    },
+    {
+      "candidate_id": "A-007",
+      "type": "Action",
+      "description": "Action 7: Dana to follow up on Infrastructure task 7.",
+      "theme": "Infrastructure",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Dana",
+        "timestamp": "00:27:00",
+        "quote": "Action 7: Dana to follow up on Infrastructure task 7.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [
+        "I-002"
+      ],
+      "owner": "Dana",
+      "due_date": "2026-09-07"
+    },
+    {
+      "candidate_id": "A-008",
+      "type": "Action",
+      "description": "Action 8: Priya to follow up on Hiring task 8.",
+      "theme": "Hiring",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Priya",
+        "timestamp": "00:28:00",
+        "quote": "Action 8: Priya to follow up on Hiring task 8.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Priya",
+      "due_date": "2026-09-08"
+    },
+    {
+      "candidate_id": "A-009",
+      "type": "Action",
+      "description": "Action 9: Alice to follow up on Roadmap task 9.",
+      "theme": "Roadmap",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:29:00",
+        "quote": "Action 9: Alice to follow up on Roadmap task 9.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Alice",
+      "due_date": "2026-08-25"
+    },
+    {
+      "candidate_id": "A-010",
+      "type": "Action",
+      "description": "Action 10: Marco to follow up on Billing task 10.",
+      "theme": "Billing",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Marco",
+        "timestamp": "00:30:00",
+        "quote": "Action 10: Marco to follow up on Billing task 10.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Marco",
+      "due_date": null,
+      "due_date_source_text": "sometime next week"
+    }
+  ],
+  "questions": [
+    {
+      "candidate_id": "Q-001",
+      "type": "Question",
+      "description": "Question 1: who owns the open Onboarding risk number 1?",
+      "theme": "Onboarding",
+      "status": "Open",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:41:00",
+        "quote": "Question 1: who owns the open Onboarding risk number 1?",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    },
+    {
+      "candidate_id": "Q-002",
+      "type": "Question",
+      "description": "Question 2: who owns the open Infrastructure risk number 2?",
+      "theme": "Infrastructure",
+      "status": "Open",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Marco",
+        "timestamp": "00:42:00",
+        "quote": "Question 2: who owns the open Infrastructure risk number 2?",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    },
+    {
+      "candidate_id": "Q-003",
+      "type": "Question",
+      "description": "Question 3: who owns the open Hiring risk number 3?",
+      "theme": "Hiring",
+      "status": "Open",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Dana",
+        "timestamp": "00:43:00",
+        "quote": "Question 3: who owns the open Hiring risk number 3?",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    },
+    {
+      "candidate_id": "Q-004",
+      "type": "Question",
+      "description": "Question 4: who owns the open Roadmap risk number 4?",
+      "theme": "Roadmap",
+      "status": "Open",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Priya",
+        "timestamp": "00:44:00",
+        "quote": "Question 4: who owns the open Roadmap risk number 4?",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    },
+    {
+      "candidate_id": "Q-005",
+      "type": "Question",
+      "description": "Question 5: who owns the open Billing risk number 5?",
+      "theme": "Billing",
+      "status": "Open",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:45:00",
+        "quote": "Question 5: who owns the open Billing risk number 5?",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    },
+    {
+      "candidate_id": "Q-006",
+      "type": "Question",
+      "description": "Question 6: who owns the open Onboarding risk number 6?",
+      "theme": "Onboarding",
+      "status": "Open",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Marco",
+        "timestamp": "00:46:00",
+        "quote": "Question 6: who owns the open Onboarding risk number 6?",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    },
+    {
+      "candidate_id": "Q-007",
+      "type": "Question",
+      "description": "Question 7: who owns the open Infrastructure risk number 7?",
+      "theme": "Infrastructure",
+      "status": "Open",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Dana",
+        "timestamp": "00:47:00",
+        "quote": "Question 7: who owns the open Infrastructure risk number 7?",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    }
+  ],
+  "review_candidates": [
+    {
+      "candidate_type": "Decision",
+      "description": "Ambiguous decision 0: unclear whether this was agreed.",
+      "reason_for_review": "Speaker intent was ambiguous.",
+      "confidence": "Low",
+      "evidence": {
+        "speaker": "Sam",
+        "timestamp": "00:50:00",
+        "quote": "Maybe we should, not sure.",
+        "context": "Synthetic test fixture"
+      }
+    },
+    {
+      "candidate_type": "Action",
+      "description": "Ambiguous action 1: unclear whether this was agreed.",
+      "reason_for_review": "Speaker intent was ambiguous.",
+      "confidence": "Low",
+      "evidence": {
+        "speaker": "Sam",
+        "timestamp": "00:51:00",
+        "quote": "Maybe we should, not sure.",
+        "context": "Synthetic test fixture"
+      }
+    },
+    {
+      "candidate_type": "Idea",
+      "description": "Ambiguous idea 2: unclear whether this was agreed.",
+      "reason_for_review": "Speaker intent was ambiguous.",
+      "confidence": "Low",
+      "evidence": {
+        "speaker": "Sam",
+        "timestamp": "00:52:00",
+        "quote": "Maybe we should, not sure.",
+        "context": "Synthetic test fixture"
+      }
+    },
+    {
+      "candidate_type": "Question",
+      "description": "Ambiguous question 3: unclear whether this was agreed.",
+      "reason_for_review": "Speaker intent was ambiguous.",
+      "confidence": "Low",
+      "evidence": {
+        "speaker": "Sam",
+        "timestamp": "00:53:00",
+        "quote": "Maybe we should, not sure.",
+        "context": "Synthetic test fixture"
+      }
+    }
+  ]

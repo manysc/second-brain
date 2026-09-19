@@ -12,7 +12,7 @@ npm run dev
 
 Open `http://localhost:3000/dashboard`.
 
-The source JSON is preserved in `data/meeting-extract.json`. The provided file has a missing opening `{`; the importer repairs only that wrapper defect before Zod validation. Normalized identity is `meeting_id + candidate_id`.
+Tests use synthetic fixtures in `backend/tests/fixtures/`, and `scripts/seed_seaweedfs.py` uploads whatever `data/*.json` exists.
 
 PostgreSQL with pgvector is provided for the next persistence slice: `docker compose up -d`. The current slice works without Docker, an API key, or an external AI provider.
 

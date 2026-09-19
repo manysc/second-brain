@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0",
+  "meeting": {
+    "meeting_id": "synthetic-shared",
+    "title": "Synthetic Sync",
+    "date": "2026-08-21",
+    "source_url": "https://example.com/recordings/shared"
+  },
+  "ideas": [],
+  "decisions": [
+    {
+      "candidate_id": "D-001",
+      "type": "Decision",
+      "description": "We decided to prioritize security improvements.",
+      "theme": "Security",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Priya",
+        "timestamp": "00:03:00",
+        "quote": "We decided to prioritize security improvements.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "decision_owner": "Priya"
+    }
+  ],
+  "actions": [
+    {
+      "candidate_id": "A-001",
+      "type": "Action",
+      "description": "Marco will draft the security proposal.",
+      "theme": "Security",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Marco",
+        "timestamp": "00:05:00",
+        "quote": "Marco will draft the security proposal.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": [],
+      "owner": "Marco",
+      "due_date": "2026-09-15"
+    }
+  ],
+  "questions": [
+    {
+      "candidate_id": "Q-001",
+      "type": "Question",
+      "description": "What budget is available for security?",
+      "theme": "Security",
+      "status": "Open",
+      "confidence": "Medium",
+      "evidence": {
+        "speaker": "Dana",
+        "timestamp": "00:07:00",
+        "quote": "What budget is available for security?",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    }
+  ],
+  "review_candidates": [
+    {
+      "candidate_type": "Action",
+      "description": "Someone might review security metrics.",
+      "reason_for_review": "Owner unclear.",
+      "confidence": "Low",
+      "evidence": {
+        "speaker": "Sam",
+        "timestamp": "00:09:00",
+        "quote": "Someone should look at it.",
+        "context": "Synthetic test fixture"
+      }
+    }
+  ]
+}

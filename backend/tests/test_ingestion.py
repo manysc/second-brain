@@ -8,7 +8,7 @@ from moto import mock_aws
 
 from app import ingest, s3_store
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent / "fixtures"
 BUCKET = "test-bucket"
 PREFIX = "meetings/"
 

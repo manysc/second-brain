@@ -16,7 +16,7 @@ from sqlalchemy.exc import OperationalError
 from app import data, db, ingest, s3_store
 from app.db_models import KnowledgeItemRow
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent / "fixtures"
 BUCKET = "test-bucket"
 PREFIX = "meetings/"
 FILES = [
@@ -68,7 +68,8 @@ def seeded_meetings(db_ready, monkeypatch):
 def test_ingest_all_from_s3_populates_postgres(seeded_meetings):
     assert seeded_meetings == 3
     meetings = data.load_meetings()
-    assert len(meetings) == 3
+    # the shared dev database may already hold other meetings, so only require ours to be present
+    assert {Path(name).stem.replace(".", "-") for name in FILES} <= {meeting.id for meeting in meetings}
     assert len(data.all_items(meetings)) > 0
     assert len(data.all_review_candidates(meetings)) > 0
 
