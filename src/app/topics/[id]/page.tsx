@@ -4,7 +4,7 @@ import { KnowledgeCard } from "@/components/KnowledgeCard";
 import { TopicAssignmentForm } from "@/components/TopicAssignmentForm";
 import { BulkMoveProvider, SelectableItem } from "@/components/BulkTopicMove";
 import { SuggestedItemTopics } from "@/components/SuggestedItemTopics";
-import { PriorityBadge } from "@/components/PriorityBadge";
+import { PriorityDetailsBadge, PriorityDetailsPanel, PriorityDetailsProvider } from "@/components/PriorityDetails";
 import { PriorityOverrideForm } from "@/components/PriorityOverrideForm";
 import { getMeetings, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
 import { deleteTopicAction, recalculatePriorityAction, updateTopicAction } from "@/lib/actions";
@@ -44,6 +44,7 @@ export default async function TopicDetail({
 
   return (
     <AppShell>
+      <PriorityDetailsProvider>
       <div className="page-head compact">
         <div>
           <Link className="back-link" href="/topics">← Topics</Link>
@@ -51,7 +52,7 @@ export default async function TopicDetail({
           <h1>{topic.name}</h1>
           <p className="lede">{topic.items.length} evidence-backed items currently contribute to this thread.</p>
         </div>
-        <PriorityBadge priority={topic.priority} />
+        <PriorityDetailsBadge priority={topic.priority} />
       </div>
       {error ? <p className="error-banner">{error}</p> : null}
       <div className="topic-detail-actions">
@@ -70,6 +71,7 @@ export default async function TopicDetail({
           </button>
         </form>
       </div>
+      <PriorityDetailsPanel>
       <section className="priority-section">
         <p className="eyebrow">Priority</p>
         {topic.priority ? (
@@ -111,6 +113,7 @@ export default async function TopicDetail({
         </form>
         <PriorityOverrideForm topicId={topic.id} priority={topic.priority} />
       </section>
+      </PriorityDetailsPanel>
       {topic.name === "Uncategorized" ? <SuggestedItemTopics suggestions={suggestions} /> : null}
       <section className="topic-situation">
         <p className="eyebrow">Current situation</p>
@@ -207,6 +210,7 @@ export default async function TopicDetail({
           </section>
         </div>
       </BulkMoveProvider>
+      </PriorityDetailsProvider>
     </AppShell>
   );
 }
