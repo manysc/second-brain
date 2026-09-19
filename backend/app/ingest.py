@@ -6,16 +6,24 @@ from __future__ import annotations
 
 import json
 import re
-import uuid
+from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
+from typing import Iterable
 
+import numpy as np
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app import db, embeddings, s3_store
-from app.data import DUPLICATE_MATCH_THRESHOLD
+from app.data import (
+    DUPLICATE_MATCH_THRESHOLD,
+    ITEM_TOPIC_MATCH_SIMILARITY,
+    UNCATEGORIZED_TOPIC,
+    _closest_topic,
+    _get_or_create_uncategorized_topic,
+)
 from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
 from app.models import (
     Confidence,
@@ -153,17 +161,130 @@ def parse_meeting_from_s3(key: str) -> Meeting:
     return _normalize_extraction(parsed, meeting_id, variant)
 
 
-def _resolve_topic_id(session: Session, theme: str | None, cache: dict[str, str]) -> str:
-    name = theme or "Uncategorized"
-    if name in cache:
-        return cache[name]
-    existing = session.execute(select(TopicRow).where(TopicRow.name == name)).scalar_one_or_none()
-    topic_id = existing.id if existing is not None else str(uuid.uuid4())
-    if existing is None:
-        session.add(TopicRow(id=topic_id, name=name))
-        session.flush()
-    cache[name] = topic_id
-    return topic_id
+class _TopicMatcher:
+    """Files new items under an *existing* topic. Ingestion never creates a topic: when nothing
+    matches, the item lands in "Uncategorized" with the extractor's theme kept as a proposal
+    (`suggested_topic`) for a human to accept, rename or redirect on the review page.
+
+    Match order: (1) exact topic name == theme, (2) the topic most of the item's related items
+    already sit in, (3) the topic whose centroid is semantically closest (>= the same similarity
+    used for item-topic suggestions)."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._uncategorized_id: str | None = None
+        self._ids_by_name: dict[str, str] = {}
+        self._names_by_id: dict[str, str] = {}
+        self._sums: dict[str, np.ndarray] = {}
+        self._counts: dict[str, int] = {}
+        rows = session.execute(select(TopicRow).options(selectinload(TopicRow.items))).scalars().all()
+        for row in rows:
+            self._ids_by_name[row.name.casefold()] = row.id
+            self._names_by_id[row.id] = row.name
+            if row.name == UNCATEGORIZED_TOPIC:
+                self._uncategorized_id = row.id
+                continue
+            vectors = [np.array(item.embedding) for item in row.items if item.embedding is not None]
+            if vectors:
+                self._sums[row.id] = np.sum(vectors, axis=0)
+                self._counts[row.id] = len(vectors)
+
+    def _uncategorized(self) -> str:
+        if self._uncategorized_id is None:
+            self._uncategorized_id = _get_or_create_uncategorized_topic(self._session)
+            self._ids_by_name[UNCATEGORIZED_TOPIC.casefold()] = self._uncategorized_id
+            self._names_by_id[self._uncategorized_id] = UNCATEGORIZED_TOPIC
+        return self._uncategorized_id
+
+    @staticmethod
+    def _full_related_ids(item: KnowledgeItem) -> list[str]:
+        # related_ids are candidate ids local to the item's own extract; full ids share its prefix
+        prefix = item.id.rsplit(":", 1)[0]
+        return [f"{prefix}:{related_id}" for related_id in item.related_ids]
+
+    def _by_related_items(self, item: KnowledgeItem, batch_topic_ids: Iterable[str] = ()) -> str | None:
+        """Majority topic among the item's related items already in the DB plus `batch_topic_ids`
+        (topics of related items from the same extract, which aren't inserted yet)."""
+        full_ids = self._full_related_ids(item)
+        topic_ids = list(batch_topic_ids)
+        if full_ids:
+            topic_ids += [
+                topic_id
+                for (topic_id,) in self._session.execute(
+                    select(KnowledgeItemRow.topic_id).where(
+                        KnowledgeItemRow.id.in_(full_ids), KnowledgeItemRow.topic_id.is_not(None)
+                    )
+                )
+                if topic_id != self._uncategorized_id
+            ]
+        return Counter(topic_ids).most_common(1)[0][0] if topic_ids else None
+
+    def resolve(
+        self, item: KnowledgeItem, vector: list[float], batch_topic_ids: Iterable[str] = ()
+    ) -> tuple[str, str | None]:
+        """Returns (topic_id, proposed_topic_name). The proposal is set only when unmatched."""
+        theme = (item.theme or "").strip()
+        if not theme or theme.casefold() == UNCATEGORIZED_TOPIC.casefold():
+            return self._uncategorized(), None
+        matched = self._ids_by_name.get(theme.casefold()) or self._by_related_items(item, batch_topic_ids)
+        if matched is None:
+            centroids = {tid: total / self._counts[tid] for tid, total in self._sums.items()}
+            matched, _ = _closest_topic(np.array(vector), centroids, ITEM_TOPIC_MATCH_SIMILARITY)
+        if matched is not None:
+            return matched, None
+        return self._uncategorized(), theme
+
+    def resolve_batch(
+        self, entries: list[tuple[KnowledgeItem, list[float]]]
+    ) -> dict[str, tuple[str, str | None]]:
+        """Resolves every new item of an extract at once, so related items are found regardless of
+        order or link direction (B -> A, A -> B, or chains): links are treated as undirected, and
+        items left in "Uncategorized" adopt a related item's topic until nothing changes."""
+        known_ids = {item.id for item, _ in entries}
+        neighbours: dict[str, set[str]] = defaultdict(set)
+        for item, _ in entries:
+            for other_id in self._full_related_ids(item):
+                if other_id in known_ids and other_id != item.id:
+                    neighbours[item.id].add(other_id)
+                    neighbours[other_id].add(item.id)
+
+        resolved: dict[str, tuple[str, str | None]] = {}
+        matched: dict[str, str] = {}  # item id -> existing (non-Uncategorized) topic it was filed under
+
+        def note(item_id: str, topic_id: str, proposal: str | None) -> None:
+            resolved[item_id] = (topic_id, proposal)
+            if topic_id != self._uncategorized_id:
+                matched[item_id] = topic_id
+
+        for item, vector in entries:
+            batch_topic_ids = [matched[other] for other in neighbours[item.id] if other in matched]
+            note(item.id, *self.resolve(item, vector, batch_topic_ids))
+
+        changed = True
+        while changed:
+            changed = False
+            for item, _ in entries:
+                if item.id in matched:
+                    continue
+                votes = Counter(matched[other] for other in neighbours[item.id] if other in matched)
+                if votes:
+                    note(item.id, votes.most_common(1)[0][0], None)
+                    changed = True
+
+        # fold vectors in only once each item's final topic is known
+        for item, vector in entries:
+            self.record(resolved[item.id][0], vector)
+        return resolved
+
+    def name_of(self, topic_id: str) -> str:
+        return self._names_by_id[topic_id]
+
+    def record(self, topic_id: str, vector: list[float]) -> None:
+        """Folds a newly filed item into its topic's centroid so later items in the run can match it."""
+        if topic_id == self._uncategorized_id:
+            return
+        self._sums[topic_id] = self._sums.get(topic_id, 0) + np.array(vector)
+        self._counts[topic_id] = self._counts.get(topic_id, 0) + 1
 
 
 def _find_similar_item_in_meeting(session: Session, meeting_id: str, embedding: list[float]) -> KnowledgeItemRow | None:
@@ -195,13 +316,18 @@ def upsert_meeting(session: Session, meeting: Meeting) -> None:
 
     if meeting.items:
         item_vectors = embeddings.embed_texts([item.description for item in meeting.items])
-        topic_cache: dict[str, str] = {}
+        matcher = _TopicMatcher(session)
         existing_ids = {
             row_id
             for (row_id,) in session.execute(
                 select(KnowledgeItemRow.id).where(KnowledgeItemRow.id.in_([item.id for item in meeting.items]))
             )
         }
+        # resolved together (not one by one) so a related item later in the extract is still found;
+        # an item skipped below as a near-duplicate keeps its slot here, which is harmless
+        assignments = matcher.resolve_batch(
+            [(item, vector) for item, vector in zip(meeting.items, item_vectors) if item.id not in existing_ids]
+        )
         for item, vector in zip(meeting.items, item_vectors):
             if item.id not in existing_ids:
                 duplicate = _find_similar_item_in_meeting(session, meeting.id, vector)
@@ -210,16 +336,22 @@ def upsert_meeting(session: Session, meeting: Meeting) -> None:
                     # meeting - reinforce it instead of inserting a second, duplicate row
                     duplicate.confidence = "HIGH"
                     continue
-            # only resolve/create a topic for genuinely new items - re-ingesting an item that
-            # already exists must never resurrect a topic the user deliberately deleted
-            topic_id = None if item.id in existing_ids else _resolve_topic_id(session, item.theme, topic_cache)
+            # only file genuinely new items - re-ingesting an item that already exists must not
+            # undo a manual topic assignment or resolved proposal
+            topic_id: str | None = None
+            suggested_topic: str | None = None
+            theme = item.theme
+            if item.id not in existing_ids:
+                topic_id, suggested_topic = assignments[item.id]
+                theme = matcher.name_of(topic_id)
             item_stmt = pg_insert(KnowledgeItemRow).values(
                 id=item.id,
                 meeting_id=meeting.id,
                 topic_id=topic_id,
                 type=item.type,
                 description=item.description,
-                theme=item.theme,
+                theme=theme,
+                suggested_topic=suggested_topic,
                 status=item.status,
                 confidence=item.confidence,
                 owner=item.owner,
@@ -238,10 +370,10 @@ def upsert_meeting(session: Session, meeting: Meeting) -> None:
             update_cols = {
                 col: getattr(item_stmt.excluded, col)
                 for col in (
-                    # topic_id intentionally excluded: preserves manual topic reassignments across re-ingestion
+                    # topic_id, theme (kept equal to the topic name) and suggested_topic intentionally
+                    # excluded: preserves manual topic reassignments and proposal decisions across re-ingestion
                     "type",
                     "description",
-                    "theme",
                     "status",
                     "confidence",
                     "owner",

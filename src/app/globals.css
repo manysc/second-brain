@@ -19,3 +19,5 @@
 .selectable-item { position:relative; } .selectable-item input[type="checkbox"] { position:absolute; top:10px; right:10px; z-index:1; width:16px; height:16px; cursor:pointer; } .bulk-move-bar { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:10; display:flex; align-items:center; gap:10px; background:var(--ink); color:#fff; padding:12px 18px; box-shadow:0 6px 24px rgba(0,0,0,.25); font-size:12px; } .bulk-move-bar select { border:1px solid #3b4948; background:#2a3939; color:#fff; padding:8px 10px; font-size:12px; } .bulk-move-bar button:disabled { opacity:.4; cursor:not-allowed; }
 
 .priority-toggle { background:none; border:0; padding:0; margin:0; font:inherit; color:inherit; cursor:pointer; text-align:inherit; } .priority-toggle:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
+
+.topic-proposal-form { display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; } .topic-proposal-form label { display:flex; flex-direction:column; gap:4px; font-size:12px; } .topic-proposal-form input, .topic-proposal-form select { padding:8px 10px; font-size:12px; }

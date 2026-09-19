@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  acceptTopicProposal,
   createTopic,
   deleteTopic,
   mergeTopics,
   moveItemsTopic,
   moveItemTopic,
   recalculateTopicPriority,
+  rejectTopicProposal,
   setItemPriorityOverride,
   setTopicPriorityOverride,
   updateReviewStatus,
@@ -112,9 +114,11 @@ export async function assignItemTopicAction(itemId: string, topicId: string): Pr
 
 async function decideReviewCandidate(formData: FormData, status: "ACCEPTED" | "REJECTED"): Promise<void> {
   const candidateId = String(formData.get("candidateId") ?? "");
+  // only the accept form has a topic picker; "" there means the reviewer chose Uncategorized
+  const topicId = status === "ACCEPTED" && formData.has("topicId") ? String(formData.get("topicId")) : undefined;
 
   try {
-    await updateReviewStatus(candidateId, status);
+    await updateReviewStatus(candidateId, status, topicId);
   } catch (err) {
     redirect(`/review?error=${encodeURIComponent(errorMessage(err))}`);
   }
@@ -132,6 +136,40 @@ export async function acceptReviewAction(formData: FormData): Promise<void> {
 
 export async function rejectReviewAction(formData: FormData): Promise<void> {
   await decideReviewCandidate(formData, "REJECTED");
+}
+
+function revalidateAfterTopicProposal(): void {
+  revalidatePath("/review");
+  revalidatePath("/dashboard");
+  revalidatePath("/items");
+  revalidatePath("/topics");
+  revalidatePath("/meetings");
+}
+
+export async function acceptTopicProposalAction(formData: FormData): Promise<void> {
+  const suggestedName = String(formData.get("suggestedName") ?? "");
+  const topicName = String(formData.get("topicName") ?? "").trim();
+  const existingTopicId = String(formData.get("existingTopicId") ?? "");
+
+  try {
+    await acceptTopicProposal(suggestedName, topicName || null, existingTopicId || null);
+  } catch (err) {
+    redirect(`/review?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidateAfterTopicProposal();
+  redirect("/review");
+}
+
+export async function rejectTopicProposalAction(formData: FormData): Promise<void> {
+  const suggestedName = String(formData.get("suggestedName") ?? "");
+
+  try {
+    await rejectTopicProposal(suggestedName);
+  } catch (err) {
+    redirect(`/review?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidateAfterTopicProposal();
+  redirect("/review");
 }
 
 function revalidatePriorityAffectedPaths(topicId: string): void {

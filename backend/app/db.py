@@ -39,6 +39,13 @@ def init_db() -> None:
     _backfill_topics(engine)
     _backfill_topic_priority(engine)
     _backfill_item_priority_override(engine)
+    _backfill_suggested_topic(engine)
+
+
+def _backfill_suggested_topic(engine: Engine) -> None:
+    """Idempotent migration: adds knowledge_items.suggested_topic (new-topic proposals awaiting review)."""
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE knowledge_items ADD COLUMN IF NOT EXISTS suggested_topic VARCHAR"))
 
 
 def _backfill_topics(engine: Engine) -> None:

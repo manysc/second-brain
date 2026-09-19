@@ -62,6 +62,9 @@ class KnowledgeItemRow(Base):
     description: Mapped[str] = mapped_column(String)
     # legacy free-text grouping key, kept in sync with topic.name for the per-meeting view
     theme: Mapped[str | None] = mapped_column(String, nullable=True)
+    # new-topic name proposed by the extractor when ingestion found no existing topic to file the item
+    # under; non-null = a human has yet to accept/reject it (see data.accept_topic_proposal)
+    suggested_topic: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String)
     confidence: Mapped[str] = mapped_column(String)
     owner: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -12,6 +12,7 @@ import type {
   TopicMergeSuggestion,
   TopicPriorityHistoryEntry,
   TopicPriorityLevel,
+  TopicProposal,
 } from "./domain";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
@@ -118,8 +119,33 @@ export function getReview(): Promise<ReviewCandidate[]> {
   return apiFetch<ReviewCandidate[]>("/api/review");
 }
 
-export function updateReviewStatus(id: string, status: "ACCEPTED" | "REJECTED"): Promise<ReviewCandidate> {
-  return apiMutate<ReviewCandidate>(`/api/review/${encodeURIComponent(id)}`, "PATCH", { status });
+// topicId (accept only): "" = Uncategorized, undefined = let the backend auto-match
+export function updateReviewStatus(
+  id: string,
+  status: "ACCEPTED" | "REJECTED",
+  topicId?: string
+): Promise<ReviewCandidate> {
+  return apiMutate<ReviewCandidate>(`/api/review/${encodeURIComponent(id)}`, "PATCH", { status, topicId });
+}
+
+export function getTopicProposals(): Promise<TopicProposal[]> {
+  return apiFetch<TopicProposal[]>("/api/review/topic-proposals");
+}
+
+export function acceptTopicProposal(
+  suggestedName: string,
+  topicName: string | null,
+  existingTopicId: string | null
+): Promise<KnowledgeItem[]> {
+  return apiMutate<KnowledgeItem[]>("/api/review/topic-proposals/accept", "POST", {
+    suggestedName,
+    topicName,
+    existingTopicId,
+  });
+}
+
+export function rejectTopicProposal(suggestedName: string): Promise<void> {
+  return apiMutate<void>("/api/review/topic-proposals/reject", "POST", { suggestedName });
 }
 
 export function recalculateTopicPriority(id: string): Promise<Topic> {

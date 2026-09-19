@@ -31,6 +31,9 @@ from app.models import (
     TopicMergeSuggestion,
     TopicPriorityHistoryEntry,
     TopicPriorityLevel,
+    TopicProposal,
+    TopicProposalAccept,
+    TopicProposalReject,
     TopicUpdate,
 )
 
@@ -263,15 +266,39 @@ def set_item_priority_override(item_id: str, payload: PriorityOverrideUpdate) ->
 
 @app.get("/api/review", response_model=list[ReviewCandidate])
 def get_review() -> list[ReviewCandidate]:
-    return [c for c in data.all_review_candidates(data.load_meetings()) if c.status == "PENDING"]
+    pending = [c for c in data.all_review_candidates(data.load_meetings()) if c.status == "PENDING"]
+    return data.with_suggested_topics(pending)
+
+
+@app.get("/api/review/topic-proposals", response_model=list[TopicProposal])
+def get_topic_proposals() -> list[TopicProposal]:
+    return data.topic_proposals()
+
+
+@app.post("/api/review/topic-proposals/accept", response_model=list[KnowledgeItem])
+def accept_topic_proposal(payload: TopicProposalAccept) -> list[KnowledgeItem]:
+    try:
+        return data.accept_topic_proposal(payload.suggested_name, payload.topic_name, payload.existing_topic_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Topic proposal not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/review/topic-proposals/reject", status_code=204)
+def reject_topic_proposal(payload: TopicProposalReject) -> None:
+    if data.reject_topic_proposal(payload.suggested_name) == 0:
+        raise HTTPException(status_code=404, detail="Topic proposal not found")
 
 
 @app.patch("/api/review/{candidate_id}", response_model=ReviewCandidate)
 def update_review_status(candidate_id: str, payload: ReviewStatusUpdate) -> ReviewCandidate:
     try:
-        candidate = data.set_review_status(candidate_id, payload.status)
+        candidate = data.set_review_status(candidate_id, payload.status, payload.topic_id)
     except data.ReviewCandidateAlreadyDecided:
         raise HTTPException(status_code=409, detail="Review candidate already decided")
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Topic not found")
     if candidate is None:
         raise HTTPException(status_code=404, detail="Review candidate not found")
     return candidate

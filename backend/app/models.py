@@ -58,6 +58,8 @@ class ReviewCandidate(CamelModel):
     confidence: Confidence
     evidence: Evidence
     status: ReviewStatus = "PENDING"
+    # existing topic an accepted candidate would be filed under (semantic match); filled in by GET /api/review
+    suggested_topic_id: str | None = Field(default=None, alias="suggestedTopicId")
 
 
 class TopicPrioritySignal(CamelModel):
@@ -144,6 +146,8 @@ class ItemsTopicBulkUpdate(CamelModel):
 
 class ReviewStatusUpdate(CamelModel):
     status: Literal["ACCEPTED", "REJECTED"]
+    # ACCEPTED only: existing topic to file the new item under. "" = Uncategorized; omitted/null = auto-match
+    topic_id: str | None = Field(default=None, alias="topicId")
 
 
 class FollowUpRelatedItem(CamelModel):
@@ -174,6 +178,25 @@ class TopicMergeSuggestion(CamelModel):
     topic_a: Topic = Field(alias="topicA")
     topic_b: Topic = Field(alias="topicB")
     similarity: float
+
+
+class TopicProposal(CamelModel):
+    """A new topic name the extractor proposed for a group of items; nothing is created until a human accepts it."""
+    name: str
+    items: list[KnowledgeItem]
+    suggested_existing_topic_id: str | None = Field(default=None, alias="suggestedExistingTopicId")
+
+
+class TopicProposalAccept(CamelModel):
+    suggested_name: str = Field(alias="suggestedName")
+    # rename the new topic before it is created
+    topic_name: str | None = Field(default=None, alias="topicName")
+    # file the items under this existing topic instead of creating a new one
+    existing_topic_id: str | None = Field(default=None, alias="existingTopicId")
+
+
+class TopicProposalReject(CamelModel):
+    suggested_name: str = Field(alias="suggestedName")
 
 
 class ItemTopicSuggestion(CamelModel):

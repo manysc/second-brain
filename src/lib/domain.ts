@@ -37,6 +37,7 @@ export type ReviewCandidate = {
   confidence: Confidence;
   evidence: Evidence;
   status: "PENDING" | "ACCEPTED" | "REJECTED";
+  suggestedTopicId?: string | null;
 };
 
 export type TopicPriorityLevel = "CRITICAL" | "MAJOR" | "MINOR";
@@ -129,6 +130,12 @@ export type TopicMergeSuggestion = {
   topicA: Topic;
   topicB: Topic;
   similarity: number;
+};
+
+export type TopicProposal = {
+  name: string;
+  items: KnowledgeItem[];
+  suggestedExistingTopicId: string | null;
 };
 
 export type ItemTopicSuggestion = {

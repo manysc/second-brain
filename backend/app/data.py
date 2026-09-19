@@ -33,7 +33,16 @@ from app.models import (
     TopicPriorityHistoryEntry,
     TopicPriorityInfo,
     TopicPrioritySignal,
+    TopicProposal,
 )
+
+UNCATEGORIZED_TOPIC = "Uncategorized"
+
+# cosine similarity between an item and a topic's centroid at/above which the item is filed under that
+# existing topic (ingestion) or suggested for it (suggested_item_topics)
+ITEM_TOPIC_MATCH_SIMILARITY = 0.6
+# looser bar for merely hinting an existing topic on a new-topic proposal
+PROPOSAL_HINT_SIMILARITY = 0.4
 
 # cosine distance (embeddings are normalized, so 0=identical..~2=opposite) below which an
 # accepted review candidate is treated as a duplicate of an existing item rather than promoted
@@ -180,6 +189,31 @@ def all_review_candidates(meetings: list[Meeting]) -> list[ReviewCandidate]:
     return [candidate for meeting in meetings for candidate in meeting.review_candidates]
 
 
+def _matching_topic_centroids(session: Session) -> dict[str, np.ndarray]:
+    rows = [
+        row
+        for row in session.execute(select(TopicRow).options(selectinload(TopicRow.items))).scalars().all()
+        if row.name != UNCATEGORIZED_TOPIC
+    ]
+    return _topic_centroids(rows)
+
+
+def with_suggested_topics(candidates: list[ReviewCandidate]) -> list[ReviewCandidate]:
+    """Fills `suggested_topic_id` (closest existing topic, if similar enough) on each candidate - the
+    same match set_review_status applies when a candidate is accepted without an explicit topic."""
+    if not candidates:
+        return candidates
+    vectors = embeddings.embed_texts([candidate.description for candidate in candidates])
+    with db.get_session() as session:
+        centroids = _matching_topic_centroids(session)
+    return [
+        candidate.model_copy(
+            update={"suggested_topic_id": _closest_topic(np.array(vector), centroids, ITEM_TOPIC_MATCH_SIMILARITY)[0]}
+        )
+        for candidate, vector in zip(candidates, vectors)
+    ]
+
+
 def _normalize_item_type(value: str) -> ItemType:
     normalized = value.upper()
     return normalized if normalized in ("IDEA", "DECISION", "ACTION", "QUESTION") else "IDEA"
@@ -201,16 +235,21 @@ def _find_similar_item(session: Session, embedding: list[float]) -> KnowledgeIte
 
 
 def _get_or_create_uncategorized_topic(session: Session) -> str:
-    existing = session.execute(select(TopicRow).where(TopicRow.name == "Uncategorized")).scalar_one_or_none()
+    existing = session.execute(select(TopicRow).where(TopicRow.name == UNCATEGORIZED_TOPIC)).scalar_one_or_none()
     if existing is not None:
         return existing.id
     topic_id = str(uuid.uuid4())
-    session.add(TopicRow(id=topic_id, name="Uncategorized"))
+    session.add(TopicRow(id=topic_id, name=UNCATEGORIZED_TOPIC))
     session.flush()
     return topic_id
 
 
-def set_review_status(candidate_id: str, status: ReviewStatus) -> ReviewCandidate | None:
+def set_review_status(
+    candidate_id: str, status: ReviewStatus, topic_id: str | None = None
+) -> ReviewCandidate | None:
+    """`topic_id` only matters when accepting a candidate that isn't a duplicate: a topic id files the
+    new item there, "" files it in Uncategorized, and None auto-matches the closest existing topic
+    (falling back to Uncategorized). Topics are never created here."""
     affected_topic_id: str | None = None
     with db.get_session() as session:
         row = session.get(ReviewCandidateRow, candidate_id)
@@ -228,7 +267,20 @@ def set_review_status(candidate_id: str, status: ReviewStatus) -> ReviewCandidat
                 affected_topic_id = existing.topic_id
             else:
                 owner = row.evidence_speaker
-                affected_topic_id = _get_or_create_uncategorized_topic(session)
+                topic_row: TopicRow | None = None
+                if topic_id:
+                    topic_row = session.get(TopicRow, topic_id)
+                    if topic_row is None:
+                        raise ValueError("topic not found")
+                elif topic_id is None:
+                    match_id, _ = _closest_topic(
+                        np.array(vector), _matching_topic_centroids(session), ITEM_TOPIC_MATCH_SIMILARITY
+                    )
+                    topic_row = session.get(TopicRow, match_id) if match_id else None
+                if topic_row is not None:
+                    affected_topic_id, topic_name = topic_row.id, topic_row.name
+                else:
+                    affected_topic_id, topic_name = _get_or_create_uncategorized_topic(session), UNCATEGORIZED_TOPIC
                 session.add(
                     KnowledgeItemRow(
                         id=f"{row.meeting_id}:accepted-{row.id.split(':', 1)[1]}",
@@ -236,7 +288,7 @@ def set_review_status(candidate_id: str, status: ReviewStatus) -> ReviewCandidat
                         topic_id=affected_topic_id,
                         type=_normalize_item_type(row.type),
                         description=row.description,
-                        theme=None,
+                        theme=topic_name,
                         status="Open",
                         confidence="HIGH",
                         owner=owner,
@@ -633,7 +685,7 @@ def suggested_topic_merges(
     return suggestions[:limit]
 
 
-def suggested_item_topics(min_similarity: float = 0.6, limit: int = 20) -> list[ItemTopicSuggestion]:
+def suggested_item_topics(min_similarity: float = ITEM_TOPIC_MATCH_SIMILARITY, limit: int = 20) -> list[ItemTopicSuggestion]:
     """Per-item counterpart to suggested_topic_merges: for each item still sitting in
     "Uncategorized", flags the existing topic whose items are semantically closest on average,
     for a human to review and confirm via the normal move-item flow - never assigns automatically."""
@@ -669,6 +721,105 @@ def suggested_item_topics(min_similarity: float = 0.6, limit: int = 20) -> list[
             )
     suggestions.sort(key=lambda s: s.similarity, reverse=True)
     return suggestions[:limit]
+
+
+def topic_proposals(min_hint_similarity: float = PROPOSAL_HINT_SIMILARITY) -> list[TopicProposal]:
+    """Groups items awaiting a topic decision by the new-topic name the extractor proposed. Each
+    proposal also carries the closest existing topic (when reasonably similar) as a hint for the
+    reviewer's "use existing topic" override."""
+    with db.get_session() as session:
+        item_rows = session.execute(
+            select(KnowledgeItemRow)
+            .where(KnowledgeItemRow.suggested_topic.is_not(None))
+            .options(selectinload(KnowledgeItemRow.topic))
+            .order_by(KnowledgeItemRow.id)
+        ).scalars().all()
+        if not item_rows:
+            return []
+        topic_rows = [
+            row
+            for row in session.execute(select(TopicRow).options(selectinload(TopicRow.items))).scalars().all()
+            if row.name != UNCATEGORIZED_TOPIC
+        ]
+        centroids = _topic_centroids(topic_rows)
+        grouped: dict[str, list[KnowledgeItemRow]] = {}
+        for row in item_rows:
+            grouped.setdefault(row.suggested_topic, []).append(row)
+        proposals: list[TopicProposal] = []
+        for name, rows in grouped.items():
+            vectors = [np.array(row.embedding) for row in rows if row.embedding is not None]
+            hint = _closest_topic(np.mean(vectors, axis=0), centroids, min_hint_similarity)[0] if vectors else None
+            proposals.append(
+                TopicProposal(
+                    name=name,
+                    items=[_item_from_row(row) for row in rows],
+                    suggested_existing_topic_id=hint,
+                )
+            )
+    proposals.sort(key=lambda proposal: (-len(proposal.items), proposal.name))
+    return proposals
+
+
+def _closest_topic(
+    vector: np.ndarray, centroids: dict[str, np.ndarray], min_similarity: float
+) -> tuple[str | None, float]:
+    """Topic id whose centroid is most cosine-similar to `vector`, if at least `min_similarity`."""
+    best_id: str | None = None
+    best_similarity = -1.0
+    for topic_id, centroid in centroids.items():
+        similarity = float(np.dot(vector, centroid) / (np.linalg.norm(vector) * np.linalg.norm(centroid)))
+        if similarity > best_similarity:
+            best_id, best_similarity = topic_id, similarity
+    if best_id is None or best_similarity < min_similarity:
+        return None, best_similarity
+    return best_id, best_similarity
+
+
+def accept_topic_proposal(
+    suggested_name: str, topic_name: str | None = None, existing_topic_id: str | None = None
+) -> list[KnowledgeItem]:
+    """Human decision on a proposal: files its items under `existing_topic_id` (override), or under a
+    topic named `topic_name` (default: the suggested name), creating that topic only now."""
+    with db.get_session() as session:
+        item_rows = session.execute(
+            select(KnowledgeItemRow).where(KnowledgeItemRow.suggested_topic == suggested_name)
+        ).scalars().all()
+        if not item_rows:
+            raise LookupError(suggested_name)
+        if existing_topic_id is not None:
+            target = session.get(TopicRow, existing_topic_id)
+            if target is None:
+                raise ValueError("topic not found")
+        else:
+            name = (topic_name or suggested_name).strip()
+            if not name:
+                raise ValueError("topic name must not be empty")
+            target = session.execute(select(TopicRow).where(TopicRow.name == name)).scalar_one_or_none()
+            if target is None:
+                target = TopicRow(id=str(uuid.uuid4()), name=name)
+                session.add(target)
+        target_id, target_name = target.id, target.name
+        old_topic_ids = {row.topic_id for row in item_rows}
+        for row in item_rows:
+            row.topic_id = target_id
+            row.theme = target_name
+            row.suggested_topic = None
+        session.commit()
+        results = [_item_from_row(row) for row in item_rows]
+    recalculate_priority_for_topics(old_topic_ids | {target_id}, trigger="topic_proposal_accepted")
+    return results
+
+
+def reject_topic_proposal(suggested_name: str) -> int:
+    """Dismisses a proposal: its items stay where ingestion put them (Uncategorized)."""
+    with db.get_session() as session:
+        item_rows = session.execute(
+            select(KnowledgeItemRow).where(KnowledgeItemRow.suggested_topic == suggested_name)
+        ).scalars().all()
+        for row in item_rows:
+            row.suggested_topic = None
+        session.commit()
+        return len(item_rows)
 
 
 def related_items(item: KnowledgeItem, meetings: list[Meeting]) -> list[KnowledgeItem]:
