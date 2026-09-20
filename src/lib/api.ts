@@ -7,6 +7,7 @@ import type {
   KnowledgeItem,
   Meeting,
   OpenClosed,
+  RelatedTopic,
   ReviewCandidate,
   SearchResult,
   Topic,
@@ -90,6 +91,10 @@ export async function getTopicById(id: string): Promise<Topic> {
   if (res.status === 404) notFound();
   if (!res.ok) throw new Error(`Backend request failed: /api/topics/${id} (${res.status})`);
   return res.json() as Promise<Topic>;
+}
+
+export function getRelatedTopics(id: string): Promise<RelatedTopic[]> {
+  return apiFetch<RelatedTopic[]>(`/api/topics/${encodeURIComponent(id)}/related`);
 }
 
 export function createTopic(name: string): Promise<Topic> {

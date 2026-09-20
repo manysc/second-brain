@@ -143,6 +143,14 @@ export type TopicMergeSuggestion = {
   similarity: number;
 };
 
+export type RelatedTopic = {
+  id: string;
+  name: string;
+  status: string;
+  similarity: number;
+  itemCount: number;
+};
+
 export type TopicProposal = {
   name: string;
   items: KnowledgeItem[];

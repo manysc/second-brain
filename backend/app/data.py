@@ -33,6 +33,7 @@ from app.models import (
     ManualPriorityOverride,
     Meeting,
     Note,
+    RelatedTopic,
     ReviewCandidate,
     ReviewStatus,
     SemanticContribution,
@@ -790,6 +791,38 @@ def suggested_topic_merges(
                 )
     suggestions.sort(key=lambda s: s.similarity, reverse=True)
     return suggestions[:limit]
+
+
+def related_topics(
+    topic_id: str, min_similarity: float = PROPOSAL_HINT_SIMILARITY, limit: int = 5
+) -> list[RelatedTopic] | None:
+    """Topics whose items are semantically closest on average to the given topic's, most similar
+    first. Returns None if the topic doesn't exist; excludes "Uncategorized" (a catch-all whose
+    centroid isn't meaningful) and topics with no embedded items."""
+    with db.get_session() as session:
+        stmt = select(TopicRow).options(selectinload(TopicRow.items))
+        rows = session.execute(stmt).scalars().all()
+        if not any(row.id == topic_id for row in rows):
+            return None
+        candidates = {row.id: row for row in rows if row.id != topic_id and row.name != UNCATEGORIZED_TOPIC}
+        vectors = _topic_centroids(rows)
+        target = vectors.get(topic_id)
+        if target is None:
+            return []
+        related = []
+        for other_id, row in candidates.items():
+            other = vectors.get(other_id)
+            if other is None:
+                continue
+            similarity = float(np.dot(target, other) / (np.linalg.norm(target) * np.linalg.norm(other)))
+            if similarity >= min_similarity:
+                related.append(
+                    RelatedTopic(
+                        id=row.id, name=row.name, status=row.status, similarity=similarity, item_count=len(row.items)
+                    )
+                )
+    related.sort(key=lambda r: r.similarity, reverse=True)
+    return related[:limit]
 
 
 def suggested_item_topics(min_similarity: float = ITEM_TOPIC_MATCH_SIMILARITY, limit: int = 20) -> list[ItemTopicSuggestion]:

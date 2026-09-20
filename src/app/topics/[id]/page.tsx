@@ -6,7 +6,8 @@ import { BulkMoveProvider, SelectableItem } from "@/components/BulkTopicMove";
 import { SuggestedItemTopics } from "@/components/SuggestedItemTopics";
 import { PriorityDetailsBadge, PriorityDetailsPanel, PriorityDetailsProvider } from "@/components/PriorityDetails";
 import { PriorityOverrideForm } from "@/components/PriorityOverrideForm";
-import { getMeetings, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
+import { RelatedTopics } from "@/components/RelatedTopics";
+import { getMeetings, getRelatedTopics, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
 import { NotesSection } from "@/components/NotesSection";
 import {
   addTopicNoteAction,
@@ -27,10 +28,11 @@ export default async function TopicDetail({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
-  const [topic, topics, meetings, error] = await Promise.all([
+  const [topic, topics, meetings, relatedTopics, error] = await Promise.all([
     getTopicById(id),
     getTopics(),
     getMeetings(),
+    getRelatedTopics(id),
     (await searchParams).error,
   ]);
   const suggestions = topic.name === "Uncategorized" ? await getSuggestedItemTopics() : [];
@@ -140,6 +142,7 @@ export default async function TopicDetail({
         />
       </section>
       {topic.name === "Uncategorized" ? <SuggestedItemTopics suggestions={suggestions} /> : null}
+      <RelatedTopics topics={relatedTopics} />
       <section className="topic-situation">
         <p className="eyebrow">Current situation</p>
         <h2>{topic.items[0]?.description ?? "No items assigned yet"}</h2>

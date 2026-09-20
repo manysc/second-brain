@@ -25,6 +25,7 @@ from app.models import (
     NoteCreate,
     OpenClosed,
     PriorityOverrideUpdate,
+    RelatedTopic,
     ReviewCandidate,
     ReviewStatusUpdate,
     SearchResult,
@@ -172,6 +173,14 @@ def get_topic(topic_id: str) -> Topic:
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
     return topic
+
+
+@app.get("/api/topics/{topic_id}/related", response_model=list[RelatedTopic])
+def get_related_topics(topic_id: str) -> list[RelatedTopic]:
+    related = data.related_topics(topic_id)
+    if related is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return related
 
 
 @app.post("/api/topics", response_model=Topic, status_code=201)

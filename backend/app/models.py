@@ -206,6 +206,14 @@ class TopicMergeSuggestion(CamelModel):
     similarity: float
 
 
+class RelatedTopic(CamelModel):
+    id: str
+    name: str
+    status: str
+    similarity: float
+    item_count: int = Field(alias="itemCount")
+
+
 class TopicProposal(CamelModel):
     """A new topic name the extractor proposed for a group of items; nothing is created until a human accepts it."""
     name: str
