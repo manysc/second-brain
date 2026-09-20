@@ -182,9 +182,24 @@ export type GraphEdge = {
   weight: number;
 };
 
+export type GraphTopic = {
+  id: string;
+  name: string;
+  itemCount: number;
+};
+
+// directed: `target` is among the topics most related to `source` (same data as RelatedTopic)
+export type TopicLink = {
+  source: string;
+  target: string;
+  similarity: number;
+};
+
 export type GraphData = {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  topics: GraphTopic[];
+  topicLinks: TopicLink[];
 };
 
 export type Meeting = {

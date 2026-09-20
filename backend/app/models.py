@@ -283,9 +283,25 @@ class GraphEdge(CamelModel):
     weight: float = 1.0
 
 
+class GraphTopic(CamelModel):
+    id: str
+    name: str
+    item_count: int = Field(alias="itemCount")
+
+
+class TopicLink(CamelModel):
+    """Directed: `target` is one of the topics most related to `source` (same as RelatedTopic)."""
+
+    source: str
+    target: str
+    similarity: float
+
+
 class GraphData(CamelModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+    topics: list[GraphTopic] = []
+    topic_links: list[TopicLink] = Field(default=[], alias="topicLinks")
 
 
 # --- Raw extraction file shape (mirrors the zod schemas previously in src/lib/data.ts) ---

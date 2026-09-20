@@ -71,3 +71,14 @@ def test_same_topic_items_produce_topic_edge(db_ready):
 def test_impossible_semantic_threshold_yields_no_semantic_edges(db_ready):
     graph = data.build_graph(min_semantic_similarity=1.01)
     assert not any(edge.kind == "semantic" for edge in graph.edges)
+
+
+def test_graph_topic_links_match_related_topics(db_ready):
+    graph = data.build_graph()
+    topic_ids = {topic.id for topic in graph.topics}
+    assert all(link.source in topic_ids and link.target in topic_ids for link in graph.topic_links)
+
+    for topic in graph.topics:
+        expected = {related.id for related in data.related_topics(topic.id) or []}
+        actual = {link.target for link in graph.topic_links if link.source == topic.id}
+        assert actual == expected

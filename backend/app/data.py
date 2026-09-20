@@ -24,6 +24,7 @@ from app.models import (
     FollowUpResponse,
     FollowUpTopic,
     GraphData,
+    GraphTopic,
     GraphEdge,
     GraphNode,
     HardEscalation,
@@ -38,6 +39,7 @@ from app.models import (
     ReviewStatus,
     SemanticContribution,
     Topic,
+    TopicLink,
     TopicMergeSuggestion,
     TopicPriorityHistoryEntry,
     TopicPriorityInfo,
@@ -1103,7 +1105,20 @@ def build_graph(min_semantic_similarity: float = 0.35) -> GraphData:
             if similarity >= min_semantic_similarity:
                 _add_edge(a, b, "semantic", weight=similarity)
 
-    return GraphData(nodes=nodes, edges=edges)
+    with db.get_session() as session:
+        topic_rows = session.execute(select(TopicRow).options(selectinload(TopicRow.items))).scalars().all()
+    topics = [
+        GraphTopic(id=row.id, name=row.name, item_count=len(row.items))
+        for row in topic_rows
+        if row.name != UNCATEGORIZED_TOPIC
+    ]
+    topic_links = [
+        TopicLink(source=topic.id, target=related.id, similarity=related.similarity)
+        for topic in topics
+        for related in related_topics(topic.id) or []
+    ]
+
+    return GraphData(nodes=nodes, edges=edges, topics=topics, topic_links=topic_links)
 
 
 def _resolve_related_item_id(raw_id: str, item_by_id: dict[str, KnowledgeItem], suffix_to_id: dict[str, str]) -> str | None:
