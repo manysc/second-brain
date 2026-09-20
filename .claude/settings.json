@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python -m pip install \"mcp>=2.2,<3\")",
+      "Bash(.venv/Scripts/python -)"
+    ]
+  }
+}

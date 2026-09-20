@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "mcp:build": "node scripts/mcp-server.mjs --check",
+    "mcp:start": "node scripts/mcp-server.mjs",
+    "mcp:test": "node scripts/mcp-server.mjs --test",
+    "mcp:inspect": "npx @modelcontextprotocol/inspector node scripts/mcp-server.mjs"
   },
   "dependencies": {
     "next": "16.3.3",

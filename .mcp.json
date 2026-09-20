@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "brain-assistant": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${CLAUDE_PROJECT_DIR:-.}/scripts/mcp-server.mjs"],
+      "env": {
+        "NODE_ENV": "development",
+        "BRAIN_ENV": "development",
+        "BRAIN_MCP_ALLOW_WRITES": "${BRAIN_MCP_ALLOW_WRITES:-false}"
+      }
+    }
+  }
+}

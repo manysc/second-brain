@@ -200,6 +200,26 @@ def all_items(meetings: list[Meeting]) -> list[KnowledgeItem]:
     return [item for meeting in meetings for item in meeting.items]
 
 
+def find_item(item_id: str, meetings: list[Meeting]) -> KnowledgeItem | None:
+    return next((candidate for candidate in all_items(meetings) if candidate.id == item_id), None)
+
+
+def filter_items(
+    items: list[KnowledgeItem],
+    item_type: str | None = None,
+    status: str | None = None,
+    priority: str | None = None,
+) -> list[KnowledgeItem]:
+    """Shared by the REST API and the MCP server so the filter semantics live in one place."""
+    if item_type is not None:
+        items = [item for item in items if item.type == item_type]
+    if status is not None:
+        items = [item for item in items if item.status == status]
+    if priority is not None:
+        items = [item for item in items if item.effective_priority == priority]
+    return items
+
+
 def all_review_candidates(meetings: list[Meeting]) -> list[ReviewCandidate]:
     return [candidate for meeting in meetings for candidate in meeting.review_candidates]
 

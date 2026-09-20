@@ -107,13 +107,7 @@ def get_items(
     status: OpenClosed | None = Query(default=None),
 ) -> list[KnowledgeItem]:
     items = data.all_items(data.load_meetings())
-    if item_type is not None:
-        items = [item for item in items if item.type == item_type]
-    if status is not None:
-        items = [item for item in items if item.status == status]
-    if priority is not None:
-        items = [item for item in items if item.effective_priority == priority]
-    return items
+    return data.filter_items(items, item_type=item_type, status=status, priority=priority)
 
 
 @app.get("/api/search", response_model=SearchResult)
@@ -125,7 +119,7 @@ def search_items(q: str = Query(..., min_length=1, description="Free-text search
 @app.get("/api/items/{item_id}", response_model=ItemDetail)
 def get_item(item_id: str) -> ItemDetail:
     meetings = data.load_meetings()
-    item = next((candidate for candidate in data.all_items(meetings) if candidate.id == item_id), None)
+    item = data.find_item(item_id, meetings)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
     return ItemDetail(
