@@ -19,6 +19,8 @@ export type KnowledgeItem = {
   type: ItemType;
   description: string;
   theme: string | null;
+  topicId?: string | null;
+  topicName?: string | null;
   status: OpenClosed;
   confidence: Confidence;
   owner: string | null;

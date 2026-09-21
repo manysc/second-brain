@@ -112,6 +112,9 @@ class KnowledgeItem(CamelModel):
     type: ItemType
     description: str
     theme: str | None = None
+    # the topic the item is filed under (None when uncategorized), so the UI can link to it
+    topic_id: str | None = Field(default=None, alias="topicId")
+    topic_name: str | None = Field(default=None, alias="topicName")
     status: str
     confidence: Confidence
     owner: str | None = None

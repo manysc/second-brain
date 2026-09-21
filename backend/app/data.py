@@ -122,11 +122,14 @@ def _note_from_row(row: NoteRow) -> Note:
 
 def _item_from_row(row: KnowledgeItemRow) -> KnowledgeItem:
     effective_priority, manual_override = _item_effective_priority(row)
+    topic = row.topic if row.topic is not None and row.topic.name != UNCATEGORIZED_TOPIC else None
     return KnowledgeItem(
         id=row.id,
         type=row.type,
         description=row.description,
         theme=row.theme,
+        topic_id=topic.id if topic else None,
+        topic_name=topic.name if topic else None,
         # legacy free-text statuses ("Answered", "Resolved", ...) collapse to the binary Open/Closed
         status="Closed" if topic_priority.is_resolved_status(row.status) else "Open",
         confidence=row.confidence,

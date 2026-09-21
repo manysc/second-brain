@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { KnowledgeItem } from "@/lib/domain";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -46,6 +47,9 @@ export function KnowledgeCard({ item }: { item: KnowledgeItem }) {
       ) : null}
       <div className="card-meta">
         <span>{item.id}</span>
+        {item.topicId ? (
+          <Link href={`/topics/${encodeURIComponent(item.topicId)}`}>Topic: {item.topicName}</Link>
+        ) : null}
         <span>{item.owner ?? "Owner unassigned"}</span>
         <span>{otherStakeholders.length ? otherStakeholders.join(", ") : "No other stakeholders"}</span>
         {item.dueDate ? <span>Due {item.dueDate}</span> : <span>No due date</span>}
