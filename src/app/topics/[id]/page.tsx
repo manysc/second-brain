@@ -9,6 +9,8 @@ import { PriorityOverrideForm } from "@/components/PriorityOverrideForm";
 import { RelatedTopics } from "@/components/RelatedTopics";
 import { getMeetings, getRelatedTopics, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
 import { NotesSection } from "@/components/NotesSection";
+import { AddItemForm } from "@/components/AddItemForm";
+import { EditItemForm } from "@/components/EditItemForm";
 import {
   addTopicNoteAction,
   deleteTopicAction,
@@ -171,11 +173,13 @@ export default async function TopicDetail({
                 <h2>Ideas</h2>
               </div>
             </div>
+            <AddItemForm topicId={topic.id} type="IDEA" label="idea" />
             {ideas.length ? (
               ideas.map((i) => (
                 <SelectableItem key={i.id} id={i.id}>
                   <KnowledgeCard item={i} />
                   <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+                  <EditItemForm item={i} topicId={topic.id} />
                 </SelectableItem>
               ))
             ) : (
@@ -189,11 +193,13 @@ export default async function TopicDetail({
                 <h2>Questions</h2>
               </div>
             </div>
+            <AddItemForm topicId={topic.id} type="QUESTION" label="question" />
             {questions.length ? (
               questions.map((i) => (
                 <SelectableItem key={i.id} id={i.id}>
                   <KnowledgeCard item={i} />
                   <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+                  <EditItemForm item={i} topicId={topic.id} />
                 </SelectableItem>
               ))
             ) : (
@@ -207,11 +213,13 @@ export default async function TopicDetail({
                 <h2>Decisions</h2>
               </div>
             </div>
+            <AddItemForm topicId={topic.id} type="DECISION" label="decision" />
             {decisions.length ? (
               decisions.map((i) => (
                 <SelectableItem key={i.id} id={i.id}>
                   <KnowledgeCard item={i} />
                   <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+                  <EditItemForm item={i} topicId={topic.id} />
                 </SelectableItem>
               ))
             ) : (
@@ -225,11 +233,13 @@ export default async function TopicDetail({
                 <h2>Actions</h2>
               </div>
             </div>
+            <AddItemForm topicId={topic.id} type="ACTION" label="action" />
             {actions.length ? (
               actions.map((i) => (
                 <SelectableItem key={i.id} id={i.id}>
                   <KnowledgeCard item={i} />
                   <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
+                  <EditItemForm item={i} topicId={topic.id} />
                 </SelectableItem>
               ))
             ) : (

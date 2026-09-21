@@ -285,6 +285,61 @@ def create_server(config: Config | None = None) -> MCPServer:
     ) -> WriteOut:
         return writes.add_note(guard, itemId, body, provenance)
 
+    @register(
+        "brain_add_item",
+        "Add a new idea, question, decision or action to an existing topic. The item is recorded as a manual entry "
+        "(not extracted from a meeting) and its evidence is marked 'Added manually'. Requires provenance. "
+        "Modifies data; disabled unless the operator enabled writes.",
+        WriteOut,
+        lambda r: f"Created {r.item.id}",
+        ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False),
+    )
+    def brain_add_item(
+        topicId: TopicId,  # noqa: N803
+        type: ItemKind,  # noqa: A002
+        description: Annotated[str, Field(min_length=1, max_length=2000)],
+        provenance: Provenance,
+        owner: Annotated[str, Field(max_length=200)] | None = None,
+        dueDate: Annotated[str, Field(max_length=50)] | None = None,  # noqa: N803
+        rationale: Annotated[str, Field(max_length=2000)] | None = None,
+    ) -> WriteOut:
+        return writes.create_item(guard, topicId, type, description, owner, dueDate, rationale, provenance)
+
+    @register(
+        "brain_edit_item",
+        "Edit an existing item's content: description, owner, dueDate, rationale, or type (type only for manually "
+        "added items). Unknown fields are rejected; blank owner/dueDate/rationale clears them. Requires a reason and "
+        "provenance. Pass expectedCurrent (values from your last read) to avoid overwriting concurrent changes. "
+        "Use brain_update_item for status, priority or topic. Modifies data; disabled unless the operator enabled writes.",
+        WriteOut,
+        lambda r: f"Edited {r.item.id}: {', '.join(r.applied) or 'no change needed'}",
+        ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False),
+    )
+    def brain_edit_item(
+        itemId: ItemId,  # noqa: N803
+        patch: writes.ItemEditPatch,
+        reason: Annotated[str, Field(min_length=5, max_length=500, description="Why this change is being made.")],
+        provenance: Provenance,
+        expectedCurrent: writes.ExpectedCurrent | None = None,  # noqa: N803
+    ) -> WriteOut:
+        return writes.edit_item(guard, itemId, patch, expectedCurrent, reason, provenance)
+
+    @register(
+        "brain_delete_item",
+        "Permanently delete a manually added item and its notes. Items extracted from meetings cannot be deleted "
+        "(they would be re-created by the next ingest). Cannot be undone. Requires a reason and provenance. "
+        "Modifies data; disabled unless the operator enabled writes.",
+        WriteOut,
+        lambda r: f"Deleted {r.item.id}",
+        ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False),
+    )
+    def brain_delete_item(
+        itemId: ItemId,  # noqa: N803
+        reason: Annotated[str, Field(min_length=5, max_length=500, description="Why this item is being deleted.")],
+        provenance: Provenance,
+    ) -> WriteOut:
+        return writes.delete_item(guard, itemId, reason, provenance)
+
     # ---------------- resources ----------------
 
     def _resource(fn: Callable[[], Any]) -> str:

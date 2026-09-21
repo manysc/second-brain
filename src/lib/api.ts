@@ -202,6 +202,27 @@ export function addTopicNote(id: string, body: string): Promise<Topic> {
   return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/notes`, "POST", { body });
 }
 
+export type NewItem = {
+  type: ItemType;
+  description: string;
+  owner?: string | null;
+  dueDate?: string | null;
+};
+
+export function createItem(topicId: string, item: NewItem): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/topics/${encodeURIComponent(topicId)}/items`, "POST", item);
+}
+
+export type ItemPatch = Partial<NewItem> & { rationale?: string | null };
+
+export function updateItem(id: string, patch: ItemPatch): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(id)}`, "PATCH", patch);
+}
+
+export function deleteItem(id: string): Promise<void> {
+  return apiMutate<void>(`/api/items/${encodeURIComponent(id)}`, "DELETE");
+}
+
 export function deleteTopicNote(id: string, noteId: string): Promise<Topic> {
   return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, "DELETE");
 }

@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app import data
-from app.models import NoteCreate
+from app.models import ItemCreate, ItemUpdate, NoteCreate
 from mcp_server.config import Config
 from mcp_server.errors import BrainError, not_found
 from mcp_server.schemas import AuditOut, WriteOut
@@ -46,11 +46,32 @@ class ItemPatch(BaseModel):
         return self
 
 
+class ItemEditPatch(BaseModel):
+    """The allowlist of editable content fields. Blank owner/dueDate/rationale clears the field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["IDEA", "DECISION", "ACTION", "QUESTION"] | None = Field(
+        default=None, description="New item type. Only allowed for manually added items."
+    )
+    description: str | None = Field(default=None, min_length=1, max_length=2000)
+    owner: str | None = Field(default=None, max_length=200, description="Empty string clears the owner.")
+    due_date: str | None = Field(default=None, alias="dueDate", max_length=50, description="Empty string clears it.")
+    rationale: str | None = Field(default=None, max_length=2000, description="Empty string clears it.")
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> "ItemEditPatch":
+        if not self.model_fields_set:
+            raise ValueError("patch must set at least one field")
+        return self
+
+
 class ExpectedCurrent(BaseModel):
     """Optimistic-concurrency guard: the values the caller last read. The app has no version column."""
 
     model_config = ConfigDict(extra="forbid")
 
+    description: str | None = Field(default=None, description="The item's current description.")
     status: Literal["Open", "Closed"] | None = None
     priority: Literal["CRITICAL", "MAJOR", "MINOR"] | None = Field(
         default=None, description="The item's current effective priority."
@@ -105,6 +126,7 @@ def update_item(guard: WriteGuard, item_id: str, patch: ItemPatch, expected: Exp
 
         if expected is not None:
             current = {
+                "description": item.description,
                 "status": item.status,
                 "priority": item.effective_priority,
                 "topicId": getattr(snap.topic_of_item.get(item.id), "id", None),
@@ -132,6 +154,98 @@ def update_item(guard: WriteGuard, item_id: str, patch: ItemPatch, expected: Exp
         fresh = Snapshot.load()
         audit = _audit(actor, "brain_update_item", item_id, applied, provenance, reason)
         return WriteOut(item=item_summary(fresh, fresh.item_or_404(item_id)), applied=applied, audit=audit)
+
+
+def create_item(
+    guard: WriteGuard,
+    topic_id: str,
+    kind: str,
+    description: str,
+    owner: str | None,
+    due_date: str | None,
+    rationale: str | None,
+    provenance: str,
+) -> WriteOut:
+    actor = guard.check()
+    payload = ItemCreate(type=kind, description=description, owner=owner, dueDate=due_date, rationale=rationale)
+    with _write_lock:
+        Snapshot.load().topic_or_404(topic_id)
+        created = data.create_item(topic_id, payload)
+        if created is None:
+            raise not_found("Topic", topic_id)
+        fresh = Snapshot.load()
+        audit = _audit(actor, "brain_add_item", created.id, ["created"], provenance, None)
+        return WriteOut(item=item_summary(fresh, fresh.item_or_404(created.id)), applied=["created"], audit=audit)
+
+
+def edit_item(
+    guard: WriteGuard,
+    item_id: str,
+    patch: ItemEditPatch,
+    expected: ExpectedCurrent | None,
+    reason: str,
+    provenance: str,
+) -> WriteOut:
+    actor = guard.check()
+    if not reason or len(reason.strip()) < 5:
+        raise BrainError("VALIDATION_ERROR", "A reason (at least 5 characters) is required for edits.")
+    update = ItemUpdate(**patch.model_dump(by_alias=True, exclude_unset=True))
+    with _write_lock:
+        snap = Snapshot.load()
+        before = snap.item_or_404(item_id)
+        if expected is not None:
+            current = {
+                "description": before.description,
+                "status": before.status,
+                "priority": before.effective_priority,
+                "topicId": getattr(snap.topic_of_item.get(item_id), "id", None),
+                "lastUpdated": item_summary(snap, before).last_updated,
+            }
+            for key, value in expected.model_dump(by_alias=True, exclude_unset=True).items():
+                if current[key] != value:
+                    raise BrainError(
+                        "CONFLICT",
+                        f"{key} is now {current[key]!r}, not {value!r}. Re-read the item with brain_get_item and retry.",
+                    )
+
+        after = data.update_item(item_id, update)
+        if after is None:
+            raise not_found("Item", item_id)
+        applied = [
+            name
+            for name, old, new in (
+                ("type", before.type, after.type),
+                ("description", before.description, after.description),
+                ("owner", before.owner, after.owner),
+                ("dueDate", before.due_date, after.due_date),
+                ("rationale", before.rationale, after.rationale),
+            )
+            if old != new
+        ]
+        fresh = Snapshot.load()
+        audit = _audit(actor, "brain_edit_item", item_id, applied, provenance, reason)
+        return WriteOut(item=item_summary(fresh, fresh.item_or_404(item_id)), applied=applied, audit=audit)
+
+
+def delete_item(guard: WriteGuard, item_id: str, reason: str, provenance: str) -> WriteOut:
+    actor = guard.check()
+    if not reason or len(reason.strip()) < 5:
+        raise BrainError("VALIDATION_ERROR", "A reason (at least 5 characters) is required to delete an item.")
+    with _write_lock:
+        snap = Snapshot.load()
+        before = snap.item_or_404(item_id)
+        summary = item_summary(snap, before)  # captured first: the record is gone afterwards
+        try:
+            deleted = data.delete_item(item_id)
+        except data.ItemNotDeletable:
+            raise BrainError(
+                "FORBIDDEN",
+                "Only manually added items can be deleted; items extracted from meetings would be re-created by the next ingest.",
+            ) from None
+        if not deleted:
+            raise not_found("Item", item_id)
+        audit = _audit(actor, "brain_delete_item", item_id, ["deleted"], provenance, reason)
+        return WriteOut(item=summary, applied=["deleted"], audit=audit)
 
 
 def add_note(guard: WriteGuard, item_id: str, body: str, provenance: str) -> WriteOut:

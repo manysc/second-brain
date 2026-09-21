@@ -28,7 +28,9 @@ from app.models import (
     GraphEdge,
     GraphNode,
     HardEscalation,
+    ItemCreate,
     ItemTopicSuggestion,
+    ItemUpdate,
     ItemType,
     KnowledgeItem,
     ManualPriorityOverride,
@@ -49,6 +51,9 @@ from app.models import (
 
 UNCATEGORIZED_TOPIC = "Uncategorized"
 
+# synthetic meeting that owns items added by hand rather than extracted from a meeting
+MANUAL_MEETING_ID = "manual"
+
 # cosine similarity between an item and a topic's centroid at/above which the item is filed under that
 # existing topic (ingestion) or suggested for it (suggested_item_topics)
 ITEM_TOPIC_MATCH_SIMILARITY = 0.6
@@ -68,6 +73,18 @@ _CONFIDENCE_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 
 class TopicNameConflict(Exception):
     """Raised when creating/renaming a topic to a name that's already taken."""
+
+
+class ItemNotDeletable(Exception):
+    """Raised when deleting an item that was extracted from a meeting rather than added manually."""
+
+    def __init__(self, item_id: str) -> None:
+        super().__init__("Only manually added items can be deleted")
+        self.item_id = item_id
+
+
+class ItemNotEditable(ValueError):
+    """Raised when an edit touches a field that is fixed for meeting-extracted items."""
 
 
 class ReviewCandidateAlreadyDecided(Exception):
@@ -659,6 +676,103 @@ def create_topic(name: str) -> Topic:
         session.commit()
         session.refresh(row)
         return _topic_from_row(row)
+
+
+def create_item(topic_id: str, payload: ItemCreate) -> KnowledgeItem | None:
+    """Files a manually written item under a topic. Manual items hang off a synthetic "Manual entries"
+    meeting because knowledge_items.meeting_id is NOT NULL. Returns None if the topic doesn't exist."""
+    with db.get_session() as session:
+        topic_row = session.get(TopicRow, topic_id)
+        if topic_row is None:
+            return None
+        if session.get(MeetingRow, MANUAL_MEETING_ID) is None:
+            session.add(
+                MeetingRow(
+                    id=MANUAL_MEETING_ID,
+                    title="Manual entries",
+                    date=datetime.now(timezone.utc).date().isoformat(),
+                    source_url="",
+                )
+            )
+        row = KnowledgeItemRow(
+            id=f"{MANUAL_MEETING_ID}:{uuid.uuid4()}",
+            meeting_id=MANUAL_MEETING_ID,
+            topic_id=topic_id,
+            type=payload.type,
+            description=payload.description,
+            theme=topic_row.name,
+            status="Open",
+            confidence="HIGH",
+            owner=payload.owner,
+            stakeholders=[payload.owner] if payload.owner else [],
+            due_date=payload.due_date,
+            due_date_source_text=None,
+            rationale=payload.rationale,
+            resolution=None,
+            evidence_speaker=None,
+            evidence_timestamp=None,
+            evidence_quote="Added manually",
+            evidence_context=None,
+            related_ids=[],
+            embedding=embeddings.embed_text(payload.description),
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        item = _item_from_row(row)
+    recalculate_priority_for_topics({topic_id}, trigger="item_added")
+    return item
+
+
+def is_manual_item(row: KnowledgeItemRow) -> bool:
+    return row.meeting_id == MANUAL_MEETING_ID
+
+
+def update_item(item_id: str, payload: ItemUpdate) -> KnowledgeItem | None:
+    """Edits description/owner/due date/rationale (and type, manual items only). Returns None if missing."""
+    fields = payload.model_fields_set
+    with db.get_session() as session:
+        row = session.get(KnowledgeItemRow, item_id)
+        if row is None:
+            return None
+        if "type" in fields and payload.type != row.type and not is_manual_item(row):
+            raise ItemNotEditable("The type of an item extracted from a meeting cannot be changed")
+        if "type" in fields:
+            row.type = payload.type
+        if "description" in fields and payload.description != row.description:
+            row.description = payload.description
+            row.embedding = embeddings.embed_text(payload.description)
+        if "owner" in fields:
+            row.owner = payload.owner
+            row.stakeholders = [payload.owner] if payload.owner else []
+        if "due_date" in fields:
+            row.due_date = payload.due_date
+            row.due_date_source_text = None
+        if "rationale" in fields:
+            row.rationale = payload.rationale
+        session.commit()
+        session.refresh(row)
+        item, topic_id = _item_from_row(row), row.topic_id
+    if topic_id:
+        recalculate_priority_for_topics({topic_id}, trigger="item_edited")
+    return item
+
+
+def delete_item(item_id: str) -> bool:
+    """Deletes a manually added item (its notes cascade). False if missing; ItemNotDeletable for
+    meeting-extracted items, which the next ingest would simply re-create."""
+    with db.get_session() as session:
+        row = session.get(KnowledgeItemRow, item_id)
+        if row is None:
+            return False
+        if not is_manual_item(row):
+            raise ItemNotDeletable(item_id)
+        topic_id = row.topic_id
+        session.delete(row)
+        session.commit()
+    if topic_id:
+        recalculate_priority_for_topics({topic_id}, trigger="item_deleted")
+    return True
 
 
 def update_topic(topic_id: str, name: str) -> Topic | None:

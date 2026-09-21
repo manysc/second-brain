@@ -13,7 +13,7 @@ READ_TOOLS = {
     "brain_health", "brain_search_items", "brain_get_item", "brain_get_topic_context", "brain_get_relationship_graph",
     "brain_list_open_actions", "brain_list_unresolved_questions", "brain_get_recent_changes",
 }
-WRITE_TOOLS = {"brain_update_item", "brain_add_note"}
+WRITE_TOOLS = {"brain_update_item", "brain_add_note", "brain_add_item", "brain_edit_item", "brain_delete_item"}
 
 
 def run(scenario, **config):
@@ -41,6 +41,10 @@ def test_tool_discovery_annotations_and_schemas():
     assert tools["brain_update_item"].annotations.destructive_hint is True
     assert tools["brain_add_note"].annotations.destructive_hint is False
     assert tools["brain_add_note"].annotations.idempotent_hint is False
+    assert tools["brain_add_item"].annotations.destructive_hint is False
+    assert tools["brain_add_item"].annotations.idempotent_hint is False
+    assert tools["brain_edit_item"].annotations.destructive_hint is True
+    assert tools["brain_delete_item"].annotations.destructive_hint is True
 
 
 def test_no_dangerous_generic_tools_are_exposed():
@@ -48,7 +52,10 @@ def test_no_dangerous_generic_tools_are_exposed():
         return {t.name for t in (await client.list_tools()).tools}
 
     names = run(scenario)
-    assert not [n for n in names if any(bad in n for bad in ("sql", "shell", "exec", "fetch", "file", "delete", "bulk"))]
+    # brain_delete_item is the one deliberate delete: single record, manual items only, reason required
+    assert not [
+        n for n in names - {"brain_delete_item"} if any(bad in n for bad in ("sql", "shell", "exec", "fetch", "file", "delete", "bulk"))
+    ]
 
 
 def test_resource_templates_are_registered():
@@ -76,6 +83,14 @@ BAD_CALLS = [
     ("brain_update_item", {"itemId": "a", "patch": {"owner": "x"}, "reason": "valid reason", "provenance": "test"}),
     ("brain_update_item", {"itemId": "a", "patch": {"status": "Closed"}, "reason": "no", "provenance": "test"}),
     ("brain_add_note", {"itemId": "a", "body": "", "provenance": "test"}),
+    ("brain_add_item", {"topicId": "t", "type": "NOTE", "description": "x", "provenance": "test"}),
+    ("brain_add_item", {"topicId": "t", "type": "IDEA", "description": "", "provenance": "test"}),
+    ("brain_add_item", {"topicId": "t", "type": "IDEA", "description": "x" * 2001, "provenance": "test"}),
+    ("brain_edit_item", {"itemId": "a", "patch": {}, "reason": "valid reason", "provenance": "test"}),
+    ("brain_edit_item", {"itemId": "a", "patch": {"status": "Closed"}, "reason": "valid reason", "provenance": "test"}),
+    ("brain_edit_item", {"itemId": "a", "patch": {"description": "x"}, "reason": "no", "provenance": "test"}),
+    ("brain_delete_item", {"itemId": "a", "reason": "no", "provenance": "test"}),
+    ("brain_delete_item", {"itemId": "x; DROP TABLE knowledge_items", "reason": "valid reason", "provenance": "test"}),
 ]
 
 
@@ -94,6 +109,22 @@ def test_writes_are_forbidden_unless_the_operator_enabled_them():
             "brain_update_item",
             {"itemId": "a", "patch": {"status": "Closed"}, "reason": "valid reason", "provenance": "test"},
         )
+
+    result = run(scenario)
+    assert result.is_error and "FORBIDDEN" in result.content[0].text
+
+
+@pytest.mark.parametrize(
+    "name,args",
+    [
+        ("brain_add_item", {"topicId": "t", "type": "IDEA", "description": "x", "provenance": "test"}),
+        ("brain_edit_item", {"itemId": "a", "patch": {"description": "x"}, "reason": "valid reason", "provenance": "test"}),
+        ("brain_delete_item", {"itemId": "a", "reason": "valid reason", "provenance": "test"}),
+    ],
+)
+def test_new_write_tools_are_forbidden_unless_enabled(name, args):
+    async def scenario(client):
+        return await client.call_tool(name, args)
 
     result = run(scenario)
     assert result.is_error and "FORBIDDEN" in result.content[0].text

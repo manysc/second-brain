@@ -6,7 +6,9 @@ import {
   acceptTopicProposal,
   addItemNote,
   addTopicNote,
+  createItem,
   createTopic,
+  deleteItem,
   deleteItemNote,
   deleteTopic,
   deleteTopicNote,
@@ -19,12 +21,14 @@ import {
   setItemStatus,
   setTopicPriorityOverride,
   setTopicStatus,
+  updateItem,
   updateItemNote,
   updateReviewStatus,
   updateTopic,
   updateTopicNote,
 } from "./api";
-import type { OpenClosed, TopicPriorityLevel } from "./domain";
+import type { ItemPatch } from "./api";
+import type { ItemType, OpenClosed, TopicPriorityLevel } from "./domain";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong";
@@ -308,6 +312,80 @@ export async function addTopicNoteAction(formData: FormData): Promise<void> {
   revalidatePath("/topics");
   revalidatePath(`/topics/${topicId}`);
   redirect(`/topics/${encodeURIComponent(topicId)}`);
+}
+
+const ITEM_TYPES: ItemType[] = ["IDEA", "QUESTION", "DECISION", "ACTION"];
+
+export async function createItemAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const topicPath = `/topics/${encodeURIComponent(topicId)}`;
+  const type = String(formData.get("type") ?? "") as ItemType;
+  const description = String(formData.get("description") ?? "").trim();
+  const owner = String(formData.get("owner") ?? "").trim() || null;
+  const dueDate = String(formData.get("dueDate") ?? "").trim() || null;
+  if (!ITEM_TYPES.includes(type)) redirect(`${topicPath}?error=${encodeURIComponent("Invalid item type")}`);
+  if (!description) redirect(`${topicPath}?error=${encodeURIComponent("Description is required")}`);
+
+  try {
+    await createItem(topicId, { type, description, owner, dueDate });
+  } catch (err) {
+    redirect(`${topicPath}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidateItemMutationPaths(topicId);
+  redirect(topicPath);
+}
+
+function revalidateItemMutationPaths(topicId: string): void {
+  revalidateItemPriorityAffectedPaths();
+  revalidatePath(`/topics/${topicId}`);
+  revalidatePath("/briefing");
+  revalidatePath("/graph");
+  revalidatePath("/meetings");
+}
+
+export async function updateItemAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const topicId = String(formData.get("topicId") ?? "");
+  const topicPath = `/topics/${encodeURIComponent(topicId)}`;
+  const description = String(formData.get("description") ?? "").trim();
+  if (!description) redirect(`${topicPath}?error=${encodeURIComponent("Description is required")}`);
+
+  // blank owner/due date/rationale clear the field; type is only sent for manual items
+  const patch: ItemPatch = {
+    description,
+    owner: String(formData.get("owner") ?? "").trim() || null,
+    dueDate: String(formData.get("dueDate") ?? "").trim() || null,
+    rationale: String(formData.get("rationale") ?? "").trim() || null,
+  };
+  const type = formData.get("type");
+  if (type !== null) {
+    if (!ITEM_TYPES.includes(String(type) as ItemType)) {
+      redirect(`${topicPath}?error=${encodeURIComponent("Invalid item type")}`);
+    }
+    patch.type = String(type) as ItemType;
+  }
+
+  try {
+    await updateItem(itemId, patch);
+  } catch (err) {
+    redirect(`${topicPath}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidateItemMutationPaths(topicId);
+  redirect(topicPath);
+}
+
+export async function deleteItemAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const topicId = String(formData.get("topicId") ?? "");
+  const topicPath = `/topics/${encodeURIComponent(topicId)}`;
+
+  try {
+    await deleteItem(itemId);
+  } catch (err) {
+    redirect(`${topicPath}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidateItemMutationPaths(topicId);
+  redirect(topicPath);
 }
 
 export async function deleteTopicNoteAction(formData: FormData): Promise<void> {

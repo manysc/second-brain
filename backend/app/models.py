@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ItemType = Literal["IDEA", "DECISION", "ACTION", "QUESTION"]
 Confidence = Literal["HIGH", "MEDIUM", "LOW"]
@@ -46,6 +46,65 @@ class NoteCreate(CamelModel):
         if not v:
             raise ValueError("Note cannot be empty")
         return v
+
+
+class ItemCreate(CamelModel):
+    type: ItemType
+    description: str = Field(min_length=1, max_length=2000)
+    owner: str | None = Field(default=None, max_length=200)
+    due_date: str | None = Field(default=None, alias="dueDate", max_length=50)
+    rationale: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("description")
+    @classmethod
+    def _strip_description(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Description cannot be empty")
+        return v
+
+    @field_validator("owner", "due_date", "rationale")
+    @classmethod
+    def _blank_to_none(cls, v: str | None) -> str | None:
+        v = v.strip() if v else None
+        return v or None
+
+
+class ItemUpdate(CamelModel):
+    """Partial edit: omitted fields are left alone; an explicit null/blank clears owner, due date or rationale."""
+
+    type: ItemType | None = None
+    description: str | None = Field(default=None, min_length=1, max_length=2000)
+    owner: str | None = Field(default=None, max_length=200)
+    due_date: str | None = Field(default=None, alias="dueDate", max_length=50)
+    rationale: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("description")
+    @classmethod
+    def _strip_description(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Description cannot be empty")
+        return v
+
+    @field_validator("owner", "due_date", "rationale")
+    @classmethod
+    def _blank_to_none(cls, v: str | None) -> str | None:
+        v = v.strip() if v else None
+        return v or None
+
+    @model_validator(mode="after")
+    def _check_fields(self) -> "ItemUpdate":
+        if not self.model_fields_set:
+            raise ValueError("update must set at least one field")
+        # type and description cannot be cleared, only replaced
+        if "type" in self.model_fields_set and self.type is None:
+            raise ValueError("type cannot be null")
+        if "description" in self.model_fields_set and self.description is None:
+            raise ValueError("description cannot be null")
+        return self
 
 
 class KnowledgeItem(CamelModel):

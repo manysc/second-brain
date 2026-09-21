@@ -15,11 +15,13 @@ from app import data, db, ingest
 from app.models import (
     FollowUpResponse,
     GraphData,
+    ItemCreate,
     ItemDetail,
     ItemsTopicBulkUpdate,
     ItemTopicSuggestion,
     ItemTopicUpdate,
     ItemType,
+    ItemUpdate,
     KnowledgeItem,
     Meeting,
     NoteCreate,
@@ -274,6 +276,27 @@ def get_topic_priority_history(topic_id: str) -> list[TopicPriorityHistoryEntry]
     return data.get_priority_history(topic_id)
 
 
+@app.patch("/api/items/{item_id}", response_model=KnowledgeItem)
+def update_item(item_id: str, payload: ItemUpdate) -> KnowledgeItem:
+    try:
+        item = data.update_item(item_id, payload)
+    except data.ItemNotEditable as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+@app.delete("/api/items/{item_id}", status_code=204)
+def delete_item(item_id: str) -> None:
+    try:
+        deleted = data.delete_item(item_id)
+    except data.ItemNotDeletable as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+
 @app.patch("/api/items/{item_id}/priority-override", response_model=KnowledgeItem)
 def set_item_priority_override(item_id: str, payload: PriorityOverrideUpdate) -> KnowledgeItem:
     item = data.set_item_priority_override(item_id, payload.priority, payload.reason)
@@ -336,6 +359,14 @@ def add_topic_note(topic_id: str, payload: NoteCreate) -> Topic:
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
     return topic
+
+
+@app.post("/api/topics/{topic_id}/items", response_model=KnowledgeItem, status_code=201)
+def create_topic_item(topic_id: str, payload: ItemCreate) -> KnowledgeItem:
+    item = data.create_item(topic_id, payload)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return item
 
 
 @app.delete("/api/topics/{topic_id}/notes/{note_id}", response_model=Topic)

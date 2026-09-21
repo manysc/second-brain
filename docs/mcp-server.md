@@ -92,10 +92,15 @@ npx @modelcontextprotocol/inspector --cli node scripts/mcp-server.mjs --method t
 | `brain_get_recent_changes` | read | Changes in a window of at most 90 days. |
 | `brain_update_item` | write | Status, manual priority override, or topic, with a reason and optional `expectedCurrent`. |
 | `brain_add_note` | write | Append a note. Additive only. |
+| `brain_add_item` | write | Add an idea, question, decision or action to an existing topic. Recorded as a manual entry (evidence "Added manually") on the synthetic `manual` meeting. |
+| `brain_edit_item` | write | Edit description, owner, `dueDate`, rationale, or type (type only for manual items). Needs a reason; optional `expectedCurrent` (including `description`). Blank owner/`dueDate`/rationale clears the field. |
+| `brain_delete_item` | write | Permanently delete a **manually added** item and its notes. Needs a reason. Items extracted from meetings are refused (`FORBIDDEN`) because the next ingest would re-create them. |
 
 **Resources:** `brain://items/{itemId}`, `brain://topics/{topicId}/context`, `brain://meetings/{meetingId}/summary`.
 
-**Not implemented, on purpose.** `brain_create_item` and `brain_create_relationship`: the application has no service for either. Items come from ingestion and review-accept, and relationships are the extractor's `relatedIds` plus similarity, with no relationships table. Nothing to reuse safely, so nothing was invented. There are also no delete, bulk, SQL, shell, filesystem or HTTP tools.
+**Not implemented, on purpose.** `brain_create_relationship`: relationships are the extractor's `relatedIds` plus similarity, with no relationships table, so there is nothing to reuse safely. `brain_delete_item` is the only delete and works on one manual item at a time. There are no bulk, SQL, shell, filesystem or HTTP tools.
+
+Note: re-ingesting a meeting upserts by item id, so edits to meeting-extracted items may be overwritten by a later ingest.
 
 ### Provenance labels
 
