@@ -85,7 +85,8 @@ services:
     volumes:
       - second_brain_seaweed_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8888/"]
+      # 8333 = S3 gateway (any HTTP response, even 403, means it is serving); 8888 = filer
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8333/ && curl -f http://localhost:8888/"]
       interval: 5s
       timeout: 3s
       retries: 10

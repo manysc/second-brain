@@ -4,9 +4,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+from botocore.exceptions import ConnectionClosedError, EndpointConnectionError
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,13 +52,30 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+_INGEST_ATTEMPTS = 5
+
+
 def _run_startup_ingest() -> None:
-    try:
-        count = ingest.ingest_and_commit()
-        logger.info("startup ingestion: %d meeting(s)", count)
-    except Exception:
-        # SeaweedFS/network hiccups shouldn't stop the API from serving existing Postgres data
-        logger.exception("startup ingestion failed; continuing with existing data")
+    # SeaweedFS/network hiccups shouldn't stop the API from serving existing Postgres data
+    delay = 3.0
+    for attempt in range(1, _INGEST_ATTEMPTS + 1):
+        try:
+            count = ingest.ingest_and_commit()
+            logger.info("startup ingestion: %d meeting(s)", count)
+            return
+        except (ConnectionClosedError, EndpointConnectionError) as exc:
+            if attempt == _INGEST_ATTEMPTS:
+                logger.exception("startup ingestion failed; continuing with existing data")
+                return
+            logger.warning(
+                "startup ingestion attempt %d/%d could not reach S3 (%s); retrying in %.0fs",
+                attempt, _INGEST_ATTEMPTS, exc.__class__.__name__, delay,
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 30.0)
+        except Exception:
+            logger.exception("startup ingestion failed; continuing with existing data")
+            return
 
 
 @asynccontextmanager

@@ -39,7 +39,12 @@ def _get_client(endpoint_url: str, region: str):
         "s3",
         endpoint_url=endpoint_url,
         region_name=region,
-        config=Config(s3={"addressing_style": "path"}),
+        config=Config(
+            s3={"addressing_style": "path"},
+            retries={"max_attempts": 8, "mode": "standard"},
+            connect_timeout=5,
+            read_timeout=30,
+        ),
     )
 
 
