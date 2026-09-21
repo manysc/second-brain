@@ -112,6 +112,20 @@ Every result marks where information came from: `retrieved` (stored fact), `gene
 
 "Create a follow-up action" is not possible today, since the application cannot create items. Claude can add a note or move an existing item instead.
 
+## Ask page
+
+`/ask` answers free-form questions through the same tools Claude Code uses. `src/app/api/ask/route.ts` runs the Claude Agent SDK
+(`@anthropic-ai/claude-agent-sdk`) with this MCP server attached and streams newline-delimited JSON events
+(`text`, `tool`, `done`, `error`) to `src/components/AskConversation.tsx`.
+
+- Requires `ANTHROPIC_API_KEY` (or a logged-in Claude Code) in the Next.js server environment.
+- Read-only by construction: built-in tools are disabled, only the `brain_*` read tools are allowed, the two write tools
+  are explicitly denied, and the server is launched with `BRAIN_MCP_ALLOW_WRITES=false` regardless of your shell.
+- Project and user Claude settings are not loaded (`settingSources: []`, `strictMcpConfig`), so answers do not depend on the developer's machine.
+- Limits: prompts are capped at 2000 characters, 12 agent turns and 120 seconds per request.
+- The system prompt mirrors `INSTRUCTIONS` in `backend/mcp_server/server.py`; keep the two in sync.
+- Answers cite record IDs as `[id]`; topic IDs link to `/topics/{id}` and item IDs link to their meeting.
+
 ## Security and privacy
 
 - Read tools are annotated read-only. Write tools are off unless the operator sets `BRAIN_MCP_ALLOW_WRITES`. Annotations are hints. Enforcement is in code.
