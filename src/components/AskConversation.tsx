@@ -3,13 +3,24 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import type { EffortLevel, ModelInfo } from "@anthropic-ai/claude-agent-sdk";
 
 type ToolCall = { name: string; input: unknown };
 type AskEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; input: unknown }
+  | { type: "meta"; model: string; effort: string | null }
   | { type: "done" }
   | { type: "error"; message: string };
+
+// Effort options are never hardcoded: they come from the live "default" model entry (or the union
+// of whatever models are known) so the picker always reflects what the connected account actually supports.
+function effortLevelsFor(model: ModelInfo | undefined, allModels: ModelInfo[]): EffortLevel[] {
+  if (model) return model.supportedEffortLevels ?? [];
+  const defaultEntry = allModels.find((m) => m.value === "default");
+  if (defaultEntry) return defaultEntry.supportedEffortLevels ?? [];
+  return Array.from(new Set(allModels.flatMap((m) => m.supportedEffortLevels ?? [])));
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CITATION = /\[([A-Za-z0-9_.:-]{1,200})\]/g;
@@ -41,23 +52,65 @@ function withCitations(text: string): ReactNode[] {
   return nodes;
 }
 
-export function AskConversation({ initialQuery, prompts }: { initialQuery: string; prompts: string[] }) {
+export function AskConversation({
+  initialQuery,
+  prompts,
+  initialModel,
+  initialEffort,
+}: {
+  initialQuery: string;
+  prompts: string[];
+  initialModel?: string;
+  initialEffort?: string;
+}) {
   const router = useRouter();
   const [draft, setDraft] = useState(initialQuery);
   const [answer, setAnswer] = useState("");
   const [tools, setTools] = useState<ToolCall[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(Boolean(initialQuery));
+  const [usedModel, setUsedModel] = useState<string | null>(null);
+  const [usedEffort, setUsedEffort] = useState<string | null>(null);
+
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState(initialModel ?? "");
+  const [selectedEffort, setSelectedEffort] = useState(initialEffort ?? "");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/ask/models");
+        const body = (await response.json()) as { models: ModelInfo[] };
+        if (!cancelled) setModels(body.models);
+      } catch {
+        if (!cancelled) setModelsError("Model list unavailable — using default.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedModelInfo = models.find((m) => m.value === selectedModel);
+  const effortOptions = effortLevelsFor(selectedModelInfo, models);
+  // Absent selectedModelInfo (no model chosen yet, or a stale/unknown value) is treated as "unknown, allow it" —
+  // only an explicitly-known model that omits/denies effort support disables the selector.
+  const effortDisabled = selectedModelInfo !== undefined && !selectedModelInfo.supportsEffort;
+  const effectiveEffort = effortDisabled || !effortOptions.includes(selectedEffort as EffortLevel) ? "" : selectedEffort;
 
   useEffect(() => {
     if (!initialQuery) return;
     const controller = new AbortController();
     (async () => {
+      setUsedModel(null);
+      setUsedEffort(null);
       try {
         const response = await fetch("/api/ask", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: initialQuery }),
+          body: JSON.stringify({ prompt: initialQuery, model: initialModel || undefined, effort: initialEffort || undefined }),
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {
@@ -77,7 +130,10 @@ export function AskConversation({ initialQuery, prompts }: { initialQuery: strin
             const event = JSON.parse(line) as AskEvent;
             if (event.type === "text") setAnswer((current) => current + event.text);
             else if (event.type === "tool") setTools((current) => [...current, { name: event.name, input: event.input }]);
-            else if (event.type === "error") setError(event.message);
+            else if (event.type === "meta") {
+              setUsedModel(event.model);
+              setUsedEffort(event.effort);
+            } else if (event.type === "error") setError(event.message);
           }
         }
       } catch (caught) {
@@ -89,13 +145,19 @@ export function AskConversation({ initialQuery, prompts }: { initialQuery: strin
       }
     })();
     return () => controller.abort();
-  }, [initialQuery]);
+  }, [initialQuery, initialModel, initialEffort]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const q = draft.trim();
-    if (q) router.push(`/ask?q=${encodeURIComponent(q)}`);
+    if (!q) return;
+    const params = new URLSearchParams({ q });
+    if (selectedModel) params.set("model", selectedModel);
+    if (effectiveEffort) params.set("effort", effectiveEffort);
+    router.push(`/ask?${params.toString()}`);
   }
+
+  const usedModelName = usedModel ? models.find((m) => m.value === usedModel || m.resolvedModel === usedModel)?.displayName ?? usedModel : null;
 
   return (
     <>
@@ -115,6 +177,32 @@ export function AskConversation({ initialQuery, prompts }: { initialQuery: strin
         />
         <button type="submit" disabled={running}>Ask <span>↗</span></button>
       </form>
+      <div className="ask-options">
+        <label>
+          Model
+          <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
+            <option value="">Default</option>
+            {selectedModel && !selectedModelInfo && <option value={selectedModel}>{selectedModel}</option>}
+            {models.map((m) => (
+              <option key={m.value} value={m.value}>{m.displayName}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Effort
+          <select
+            value={effectiveEffort}
+            onChange={(e) => setSelectedEffort(e.target.value)}
+            disabled={effortDisabled}
+          >
+            <option value="">Default</option>
+            {effortOptions.map((level) => (
+              <option key={level} value={level}>{level}</option>
+            ))}
+          </select>
+        </label>
+        {modelsError && <span className="ask-options-note">{modelsError}</span>}
+      </div>
       <div className="prompt-row">
         {prompts.map((prompt) => (
           <a key={prompt} href={`/ask?q=${encodeURIComponent(prompt)}`}>{prompt}</a>
@@ -124,6 +212,12 @@ export function AskConversation({ initialQuery, prompts }: { initialQuery: strin
         <section className="answer">
           <p className="eyebrow">Answer / cites record IDs, read-only</p>
           <h2>{initialQuery}</h2>
+          {usedModelName && (
+            <p className="ask-meta">
+              Answered with {usedModelName}
+              {usedEffort ? ` · ${usedEffort} effort` : ""}
+            </p>
+          )}
           {tools.length > 0 && (
             <details className="tool-trace">
               <summary>Tool activity ({tools.length})</summary>

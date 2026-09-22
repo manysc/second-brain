@@ -9,8 +9,15 @@ const PROMPTS = [
   "Why was the most recent decision made? Show the evidence.",
 ];
 
-export default async function Ask({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const query = ((await searchParams).q ?? "").trim();
+export default async function Ask({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; model?: string; effort?: string }>;
+}) {
+  const params = await searchParams;
+  const query = (params.q ?? "").trim();
+  const model = (params.model ?? "").trim() || undefined;
+  const effort = (params.effort ?? "").trim() || undefined;
 
   return (
     <AppShell>
@@ -18,7 +25,13 @@ export default async function Ask({ searchParams }: { searchParams: Promise<{ q?
         <p className="eyebrow">Ask my brain / Brain Assistant</p>
         <h1>What do you need to know?</h1>
         <p className="lede">Answers use the same read-only Brain Assistant tools as Claude Code, with record IDs cited for every claim.</p>
-        <AskConversation key={query} initialQuery={query} prompts={PROMPTS} />
+        <AskConversation
+          key={query}
+          initialQuery={query}
+          prompts={PROMPTS}
+          initialModel={model}
+          initialEffort={effort}
+        />
       </div>
     </AppShell>
   );
