@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "meeting": {
+    "meeting_id": "synthetic-partial-register",
+    "title": "Synthetic Partial Register",
+    "date": "2026-09-16",
+    "source_url": "Synthetic_Meeting_Register.xlsx"
+  },
+  "ideas": [],
+  "decisions": [
+    {
+      "candidate_id": "D-001",
+      "type": "Decision",
+      "description": "We decided to prioritize security improvements.",
+      "theme": "Security",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Priya",
+        "timestamp": "00:03:00",
+        "quote": "We decided to prioritize security improvements.",
+        "context": "Register row DEC-00001; source meeting MTG-20260701-001 (2026-07-01, Synthetic 1:1)."
+      },
+      "related_candidate_ids": [],
+      "decision_owner": "Priya"
+    },
+    {
+      "candidate_id": "D-002",
+      "type": "Decision",
+      "description": "We decided to roll out the onboarding revamp.",
+      "theme": "Onboarding",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Ines",
+        "timestamp": "00:02:00",
+        "quote": "We decided to roll out the onboarding revamp.",
+        "context": "No source-meeting annotation on this one."
+      },
+      "related_candidate_ids": [],
+      "decision_owner": "Ines"
+    }
+  ],
+  "actions": [],
+  "questions": [],
+  "review_candidates": []
+}

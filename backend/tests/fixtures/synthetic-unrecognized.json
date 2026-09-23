@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "coverage": [
+    { "meeting_id": "MTG-20260701-001", "date": "2026-07-01", "ideas": 1, "decisions": 0, "actions": 1, "questions": 0 }
+  ],
+  "notes": "This file has no top-level 'meeting' key and no list of meeting-shaped entries."
+}

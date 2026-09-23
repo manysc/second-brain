@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 import numpy as np
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, defer, selectinload
@@ -35,6 +36,7 @@ from app.models import (
     RawCandidate,
     RawEvidence,
     RawExtraction,
+    RawMeetingInfo,
     ReviewCandidate,
     Topic,
 )
@@ -160,6 +162,121 @@ def parse_meeting_from_s3(key: str) -> Meeting:
     parsed = RawExtraction.model_validate(_repair_json(s3_store.fetch_object_text(key)))
     meeting_id, variant = _derive_meeting_identity(key)
     return _normalize_extraction(parsed, meeting_id, variant)
+
+
+_SOURCE_MEETING_PATTERN = re.compile(r"source meeting (MTG-\d{8}-\d{3}) \((\d{4}-\d{2}-\d{2}),")
+_MEETING_COUNT_SUFFIX = re.compile(r"\s*\(\d+\s+meetings?\)\s*$", re.IGNORECASE)
+
+
+def _embedded_source_meeting(candidate: RawCandidate) -> tuple[str, str] | None:
+    match = _SOURCE_MEETING_PATTERN.search(candidate.evidence.context or "")
+    return (match.group(1), match.group(2)) if match else None
+
+
+def _strip_meeting_count_suffix(title: str) -> str:
+    # a flattened register's own title (e.g. "DC-MS 1:1 Meeting Register (12 meetings)") describes
+    # the whole file, not any individual meeting split out of it - drop the aggregate count
+    return _MEETING_COUNT_SUFFIX.sub("", title).strip()
+
+
+def _split_by_embedded_source_meeting(parsed: RawExtraction) -> list[RawExtraction] | None:
+    """Some single-meeting-shaped files are actually a flattened export of several real meetings,
+    recoverable only from a "source meeting MTG-... (date, ...)" annotation the extraction tool
+    writes into each candidate's evidence.context (seen so far only in register exports that
+    merge everything into one meeting instead of nesting per-meeting entries like
+    `_find_bundle_entries` handles). Returns None when no candidate carries the annotation, i.e.
+    this is a genuine single meeting."""
+    field_lists = {
+        "ideas": parsed.ideas,
+        "decisions": parsed.decisions,
+        "actions": parsed.actions,
+        "questions": parsed.questions,
+    }
+    tagged = {
+        field: [(candidate, _embedded_source_meeting(candidate)) for candidate in candidates]
+        for field, candidates in field_lists.items()
+    }
+    if not any(source for pairs in tagged.values() for _, source in pairs):
+        return None
+    untagged = sum(1 for pairs in tagged.values() for _, source in pairs if source is None)
+    if untagged:
+        raise ValueError(
+            f"{untagged} candidate(s) lack the 'source meeting' annotation needed to split this "
+            "flattened register file by meeting"
+        )
+
+    groups: dict[tuple[str, str], dict[str, list[RawCandidate]]] = {}
+    for field, pairs in tagged.items():
+        for candidate, source in pairs:
+            groups.setdefault(source, {name: [] for name in field_lists})[field].append(candidate)
+
+    return [
+        RawExtraction(
+            schema_version=parsed.schema_version,
+            meeting=RawMeetingInfo(
+                meeting_id=source_id,
+                title=_strip_meeting_count_suffix(parsed.meeting.title),
+                date=source_date,
+                source_url=parsed.meeting.source_url,
+            ),
+            review_candidates=[],
+            **bucket,
+        )
+        for (source_id, source_date), bucket in sorted(groups.items(), key=lambda kv: (kv[0][1], kv[0][0]))
+    ]
+
+
+def _find_bundle_entries(raw: dict) -> list[dict] | None:
+    # the extraction tool isn't stable about what it calls a multi-meeting bundle's list of
+    # per-meeting entries ("extractions", "meetings", ... seen so far), so find it structurally:
+    # the one top-level list whose items are each shaped like a single-meeting extraction (they
+    # carry a "meeting" key). This also correctly skips look-alike lists such as a "coverage"
+    # summary array, whose entries are flat (meeting_id/date/counts) and lack a "meeting" key.
+    for value in raw.values():
+        if isinstance(value, list) and value and all(isinstance(item, dict) and "meeting" in item for item in value):
+            return value
+    return None
+
+
+def parse_meetings_from_s3(key: str) -> list[Meeting]:
+    """Like `parse_meeting_from_s3`, but also handles a "bundle" file covering several meetings
+    (e.g. a register export), whose per-meeting entries live under some top-level list (see
+    `_find_bundle_entries`). Each embedded extraction becomes its own Meeting, keyed
+    "<meeting-key>-<n>" so they never collide with each other or with the plain single-meeting id
+    the same key would otherwise produce."""
+    raw = _repair_json(s3_store.fetch_object_text(key))
+    meeting_id, variant = _derive_meeting_identity(key)
+    try:
+        parsed = RawExtraction.model_validate(raw)
+    except ValidationError:
+        pass
+    else:
+        split = _split_by_embedded_source_meeting(parsed)
+        if split is None:
+            return [_normalize_extraction(parsed, meeting_id, variant)]
+        meetings = [_normalize_extraction(sub, f"{meeting_id}-{index + 1}", variant) for index, sub in enumerate(split)]
+        if parsed.review_candidates:
+            review_only = parsed.model_copy(
+                update={
+                    "ideas": [],
+                    "decisions": [],
+                    "actions": [],
+                    "questions": [],
+                    "meeting": parsed.meeting.model_copy(
+                        update={"title": _strip_meeting_count_suffix(parsed.meeting.title)}
+                    ),
+                }
+            )
+            meetings.append(_normalize_extraction(review_only, f"{meeting_id}-review", variant))
+        return meetings
+
+    bundle_entries = _find_bundle_entries(raw)
+    if bundle_entries is None:
+        raise ValueError(f"'{key}' is not a recognized single-meeting or bundle extraction file")
+    return [
+        _normalize_extraction(RawExtraction.model_validate(entry), f"{meeting_id}-{index + 1}", variant)
+        for index, entry in enumerate(bundle_entries)
+    ]
 
 
 class _TopicMatcher:
@@ -496,9 +613,10 @@ def _ingest_all(session: Session) -> tuple[int, bool]:
     # extracts are downloaded/parsed concurrently, but upserted sequentially in key order so topic
     # matching (which depends on what earlier extracts filed) stays deterministic
     with ThreadPoolExecutor(max_workers=min(8, len(keys) or 1)) as pool:
-        for meeting in pool.map(parse_meeting_from_s3, keys):
-            changed |= upsert_meeting(session, meeting)
-            count += 1
+        for meetings in pool.map(parse_meetings_from_s3, keys):
+            for meeting in meetings:
+                changed |= upsert_meeting(session, meeting)
+                count += 1
     return count, changed
 
 

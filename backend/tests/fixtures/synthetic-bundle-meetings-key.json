@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "scope": {
+    "register": "Synthetic_Meeting_Register.xlsx"
+  },
+  "extraction_summary": {
+    "ideas": 0,
+    "decisions": 2,
+    "actions": 2,
+    "questions": 2,
+    "review_candidates": 2
+  },
+  "coverage": [
+    { "meeting_id": "MTG-20260701-001", "date": "2026-08-21", "ideas": 0, "decisions": 1, "actions": 1, "questions": 1 },
+    { "meeting_id": "MTG-20260708-001", "date": "2026-08-28", "ideas": 0, "decisions": 1, "actions": 1, "questions": 1 }
+  ],
+  "meetings": [
+    {
+      "meeting": {
+        "meeting_id": "synthetic-shared",
+        "title": "Synthetic Bundle Meeting One",
+        "date": "2026-08-21",
+        "source_url": "https://example.com/recordings/bundle-one"
+      },
+      "extraction_summary": { "ideas": 0, "decisions": 1, "actions": 1, "questions": 1, "review_candidates": 1 },
+      "ideas": [],
+      "decisions": [
+        {
+          "candidate_id": "D-001",
+          "type": "Decision",
+          "description": "We decided to prioritize security improvements.",
+          "theme": "Security",
+          "status": "Open",
+          "confidence": "High",
+          "evidence": {
+            "speaker": "Priya",
+            "timestamp": "00:03:00",
+            "quote": "We decided to prioritize security improvements.",
+            "context": "Synthetic test fixture"
+          },
+          "related_candidate_ids": [],
+          "decision_owner": "Priya"
+        }
+      ],
+      "actions": [
+        {
+          "candidate_id": "A-001",
+          "type": "Action",
+          "description": "Marco will draft the security proposal.",
+          "theme": "Security",
+          "status": "Open",
+          "confidence": "High",
+          "evidence": {
+            "speaker": "Marco",
+            "timestamp": "00:05:00",
+            "quote": "Marco will draft the security proposal.",
+            "context": "Synthetic test fixture"
+          },
+          "related_candidate_ids": [],
+          "owner": "Marco",
+          "due_date": "2026-09-15"
+        }
+      ],
+      "questions": [
+        {
+          "candidate_id": "Q-001",
+          "type": "Question",
+          "description": "What budget is available for security?",
+          "theme": "Security",
+          "status": "Open",
+          "confidence": "Medium",
+          "evidence": {
+            "speaker": "Dana",
+            "timestamp": "00:07:00",
+            "quote": "What budget is available for security?",
+            "context": "Synthetic test fixture"
+          },
+          "related_candidate_ids": []
+        }
+      ],
+      "status_updates": [],
+      "review_candidates": [
+        {
+          "candidate_type": "Action",
+          "description": "Someone might review security metrics.",
+          "reason_for_review": "Owner unclear.",
+          "confidence": "Low",
+          "evidence": {
+            "speaker": "Sam",
+            "timestamp": "00:09:00",
+            "quote": "Someone should look at it.",
+            "context": "Synthetic test fixture"
+          }
+        }
+      ]
+    },
+    {
+      "meeting": {
+        "meeting_id": "synthetic-shared",
+        "title": "Synthetic Bundle Meeting Two",
+        "date": "2026-08-28",
+        "source_url": "https://example.com/recordings/bundle-two"
+      },
+      "extraction_summary": { "ideas": 0, "decisions": 1, "actions": 1, "questions": 1, "review_candidates": 1 },
+      "ideas": [],
+      "decisions": [
+        {
+          "candidate_id": "D-001",
+          "type": "Decision",
+          "description": "We decided to roll out the onboarding revamp.",
+          "theme": "Onboarding",
+          "status": "Open",
+          "confidence": "High",
+          "evidence": {
+            "speaker": "Ines",
+            "timestamp": "00:02:00",
+            "quote": "We decided to roll out the onboarding revamp.",
+            "context": "Synthetic test fixture"
+          },
+          "related_candidate_ids": [],
+          "decision_owner": "Ines"
+        }
+      ],
+      "actions": [
+        {
+          "candidate_id": "A-001",
+          "type": "Action",
+          "description": "Tomas will update the onboarding docs.",
+          "theme": "Onboarding",
+          "status": "Open",
+          "confidence": "High",
+          "evidence": {
+            "speaker": "Tomas",
+            "timestamp": "00:04:00",
+            "quote": "Tomas will update the onboarding docs.",
+            "context": "Synthetic test fixture"
+          },
+          "related_candidate_ids": [],
+          "owner": "Tomas",
+          "due_date": "2026-09-20"
+        }
+      ],
+      "questions": [
+        {
+          "candidate_id": "Q-001",
+          "type": "Question",
+          "description": "Who owns the onboarding rollout timeline?",
+          "theme": "Onboarding",
+          "status": "Open",
+          "confidence": "Medium",
+          "evidence": {
+            "speaker": "Leah",
+            "timestamp": "00:06:00",
+            "quote": "Who owns the onboarding rollout timeline?",
+            "context": "Synthetic test fixture"
+          },
+          "related_candidate_ids": []
+        }
+      ],
+      "status_updates": [],
+      "review_candidates": [
+        {
+          "candidate_type": "Decision",
+          "description": "Onboarding budget might need review.",
+          "reason_for_review": "Budget unconfirmed.",
+          "confidence": "Low",
+          "evidence": {
+            "speaker": "Omar",
+            "timestamp": "00:08:00",
+            "quote": "We should double check the budget.",
+            "context": "Synthetic test fixture"
+          }
+        }
+      ]
+    }
+  ]
+}

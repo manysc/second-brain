@@ -104,3 +104,119 @@ def test_parse_meeting_from_s3_derives_unique_ids_from_s3_key_when_source_ids_co
         all_ids = [item.id for meeting in meetings for item in meeting.items]
         assert len(all_ids) == len(set(all_ids))
 
+
+def test_parse_meetings_from_s3_handles_multi_meeting_bundle(s3_env):
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "synthetic-bundle-extract.json")
+
+        keys = s3_store.list_extract_keys()
+        assert len(keys) == 1
+        meetings = ingest.parse_meetings_from_s3(keys[0])
+        assert len(meetings) == 2
+        assert meetings[0].id != meetings[1].id
+        assert all(meeting.id.startswith("synthetic-bundle-extract-") for meeting in meetings)
+
+        all_ids = [item.id for meeting in meetings for item in meeting.items]
+        assert len(all_ids) == len(set(all_ids))
+
+
+def test_parse_meetings_from_s3_returns_single_meeting_for_non_bundle_files(s3_env):
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "synthetic-extract.json")
+
+        keys = s3_store.list_extract_keys()
+        meetings = ingest.parse_meetings_from_s3(keys[0])
+        assert len(meetings) == 1
+        assert meetings[0].id == ingest.parse_meeting_from_s3(keys[0]).id
+
+
+def test_parse_meetings_from_s3_finds_bundle_entries_under_any_list_key(s3_env):
+    """The extraction tool isn't stable about naming its bundle's list of per-meeting entries
+    ("extractions" vs "meetings" seen in practice) or repeating schema_version on each entry, so
+    detection must be structural, not tied to one wrapper key or a required schema_version."""
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "synthetic-bundle-meetings-key.json")
+
+        keys = s3_store.list_extract_keys()
+        assert len(keys) == 1
+        meetings = ingest.parse_meetings_from_s3(keys[0])
+        assert len(meetings) == 2
+        assert meetings[0].id != meetings[1].id
+        assert all(meeting.id.startswith("synthetic-bundle-meetings-key-") for meeting in meetings)
+
+        all_ids = [item.id for meeting in meetings for item in meeting.items]
+        assert len(all_ids) == len(set(all_ids))
+
+
+def test_parse_meetings_from_s3_raises_a_clear_error_for_unrecognized_files(s3_env):
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "synthetic-unrecognized.json")
+
+        keys = s3_store.list_extract_keys()
+        with pytest.raises(ValueError, match="not a recognized single-meeting or bundle extraction file"):
+            ingest.parse_meetings_from_s3(keys[0])
+
+
+def test_parse_meetings_from_s3_splits_a_flattened_register_by_embedded_source_meeting(s3_env):
+    """A single-meeting-shaped file can still be a flattened export of several real meetings,
+    recoverable only from a "source meeting MTG-... (date, ...)" annotation in each candidate's
+    evidence.context. Candidates without that annotation (e.g. review_candidates) can't be
+    attributed to a source meeting, so they land in one extra "<key>-review" record instead of
+    being dropped."""
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "synthetic-flattened-register.json")
+
+        keys = s3_store.list_extract_keys()
+        assert len(keys) == 1
+        meetings = ingest.parse_meetings_from_s3(keys[0])
+        assert len(meetings) == 3
+
+        dated = [m for m in meetings if m.id.endswith("-review") is False]
+        review_only = next(m for m in meetings if m.id.endswith("-review"))
+
+        assert [m.date for m in dated] == ["2026-07-01", "2026-07-08"]
+        assert all(len(m.items) == 3 for m in dated)  # 1 decision + 1 action + 1 question each
+        assert all(m.review_candidates == [] for m in dated)
+        assert all(m.title == "Synthetic 1:1 Meeting Register" for m in dated)
+
+        assert review_only.items == []
+        assert len(review_only.review_candidates) == 2
+        assert review_only.title == "Synthetic 1:1 Meeting Register"
+
+        all_ids = [item.id for meeting in meetings for item in meeting.items]
+        assert len(all_ids) == len(set(all_ids))
+
+
+def test_parse_meetings_from_s3_returns_single_meeting_when_no_candidate_is_tagged(s3_env):
+    """A genuine single meeting (ordinary evidence.context, no embedded source-meeting tags) must
+    not be affected by the flattened-register split."""
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "synthetic-extract.json")
+
+        keys = s3_store.list_extract_keys()
+        meetings = ingest.parse_meetings_from_s3(keys[0])
+        assert len(meetings) == 1
+
+
+def test_parse_meetings_from_s3_raises_for_a_partially_tagged_flattened_register(s3_env):
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "synthetic-partially-flattened.json")
+
+        keys = s3_store.list_extract_keys()
+        with pytest.raises(ValueError, match="lack the 'source meeting' annotation"):
+            ingest.parse_meetings_from_s3(keys[0])
+

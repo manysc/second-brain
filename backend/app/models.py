@@ -411,7 +411,9 @@ class RawReviewCandidate(BaseModel):
 
 
 class RawExtraction(BaseModel):
-    schema_version: str
+    # not read anywhere downstream, and not always repeated on each entry of a multi-meeting
+    # bundle file - kept only for forward compatibility, never required
+    schema_version: str | None = None
     meeting: RawMeetingInfo
     ideas: list[RawCandidate]
     decisions: list[RawCandidate]

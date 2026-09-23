@@ -89,6 +89,35 @@ existing item's confidence to `HIGH` instead of inserting a duplicate row. This 
 the one meeting, not global — items that merely *sound* similar across different meetings are left
 alone, same as the paragraph above.
 
+#### Ingesting a multi-meeting bundle
+
+A file can also be a **bundle** covering several meetings at once (e.g. a register export), instead
+of one meeting's fields directly at the top level. The extraction tool isn't stable about the exact
+bundle shape (it has named the array of per-meeting entries `extractions` in one file and `meetings`
+in another, and doesn't always repeat `schema_version` on each entry), so `ingest.parse_meetings_from_s3`
+(used instead of `parse_meeting_from_s3` for this shape) detects a bundle structurally instead of by
+a fixed key name: if the whole file doesn't parse as one meeting, it looks for the top-level list
+whose entries each have their own `"meeting"` key (`ingest._find_bundle_entries`) — which correctly
+skips look-alike summary lists (e.g. a `coverage` array of flat `meeting_id`/`date`/count rows) that
+aren't per-meeting extractions. Each entry found this way becomes its own `Meeting`, keyed
+`<meeting-key>-<n>` (`<n>` is the entry's 1-based position in the array) so the meetings from one
+bundle file never collide with each other. Everything downstream (topic matching, dedup,
+`--<variant>` namespacing) works exactly as it does for a single-meeting file.
+
+A file can also be single-meeting-*shaped* (no nested `extractions`/`meetings` array) while actually
+covering several real meetings flattened into one — a register export whose candidates each embed a
+`source meeting MTG-... (date, ...)` annotation inside `evidence.context` instead of being nested
+per meeting. `ingest._split_by_embedded_source_meeting` detects this (only when at least one
+candidate carries the annotation — a genuine single meeting's evidence never does) and regroups
+candidates by their tagged source meeting into one `Meeting` per date, again keyed
+`<meeting-key>-<n>`. `review_candidates` have no `evidence.context` to tag them with, so they can't
+be attributed to a specific source meeting; they're kept together in one extra
+`<meeting-key>-review` record instead of being dropped. If only some candidates carry the
+annotation, ingestion fails loudly rather than guessing which meeting the untagged ones belong to.
+A trailing "(N meetings)" annotation on the register's own title (e.g. "DC-MS 1:1 Meeting Register
+(12 meetings)") is stripped for every derived meeting, since it describes the whole file rather than
+any individual split-out meeting.
+
 ## Semantic embeddings (sentence-transformers)
 
 Ingestion (`backend/app/ingest.py`) embeds every `KnowledgeItem` description with
