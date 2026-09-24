@@ -173,6 +173,10 @@ The domain boundary is in `src/lib/domain.ts`; defensive loading and normalizati
 
 `/dashboard`, `/meetings`, `/meetings/[id]`, `/items`, `/actions`, `/questions`, `/decisions`, `/topics`, `/topics/[id]`, `/review`, `/briefing`, `/ask`, `/growth`, `/growth/impact`, and `/growth/career`.
 
+## Ask page
+
+`/ask` (`src/app/api/ask/route.ts`) calls `@anthropic-ai/claude-agent-sdk`'s `query()` with no auth option set, so it authenticates with whatever credential the Agent SDK finds in the environment. With no `ANTHROPIC_API_KEY` set, it falls back to the logged-in Claude Code / VS Code extension session (`~/.claude/.credentials.json`) — that is, your Claude Pro OAuth session, not a raw Anthropic API key. That means data-sharing settings for these requests are governed by that account's own "Help improve Claude" setting (claude.ai/settings/data-privacy-controls), not by anything in this app.
+
 ## Source mapping
 
 Ideas, decisions, actions, and questions become a common `KnowledgeItem`. Evidence retains speaker, quote, context, and nullable timestamp. `related_candidate_ids` are preserved as source relationships; the UI does not assign a stronger semantic edge than the source proves. Review candidates remain pending and are never automatically promoted. Qualitative confidence remains High, Medium, or Low.
