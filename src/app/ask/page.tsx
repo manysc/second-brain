@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/AppShell";
 import { AskConversation } from "@/components/AskConversation";
+import { getAvailableModels } from "@/lib/available-models";
 
 const PROMPTS = [
   "What should I follow up on?",
@@ -14,6 +15,7 @@ export default async function Ask({
 }: {
   searchParams: Promise<{ q?: string; model?: string; effort?: string }>;
 }) {
+  void getAvailableModels().catch(() => {}); // start the slow lookup now; the client fetch shares it
   const params = await searchParams;
   const query = (params.q ?? "").trim();
   const model = (params.model ?? "").trim() || undefined;

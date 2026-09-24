@@ -72,8 +72,10 @@ export function AskConversation({
   const [usedModel, setUsedModel] = useState<string | null>(null);
   const [usedEffort, setUsedEffort] = useState<string | null>(null);
 
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  // null = the model list hasn't loaded yet (listing models spawns the CLI, which can take many seconds).
+  const [models, setModels] = useState<ModelInfo[] | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsAttempt, setModelsAttempt] = useState(0);
   const [selectedModel, setSelectedModel] = useState(initialModel ?? "");
   const [selectedEffort, setSelectedEffort] = useState(initialEffort ?? "");
 
@@ -82,22 +84,34 @@ export function AskConversation({
     (async () => {
       try {
         const response = await fetch("/api/ask/models");
+        if (!response.ok) throw new Error(`Model list failed (${response.status}).`);
         const body = (await response.json()) as { models: ModelInfo[] };
         if (!cancelled) setModels(body.models);
       } catch {
-        if (!cancelled) setModelsError("Model list unavailable — using default.");
+        if (!cancelled) {
+          setModels([]);
+          setModelsError("Model list unavailable — using default.");
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [modelsAttempt]);
 
-  const selectedModelInfo = models.find((m) => m.value === selectedModel);
-  const effortOptions = effortLevelsFor(selectedModelInfo, models);
+  function retryModels() {
+    setModelsError(null);
+    setModels(null);
+    setModelsAttempt((attempt) => attempt + 1);
+  }
+
+  const availableModels = models ?? [];
+  const modelsLoading = models === null;
+  const selectedModelInfo = availableModels.find((m) => m.value === selectedModel);
+  const effortOptions = effortLevelsFor(selectedModelInfo, availableModels);
   // Absent selectedModelInfo (no model chosen yet, or a stale/unknown value) is treated as "unknown, allow it" —
   // only an explicitly-known model that omits/denies effort support disables the selector.
-  const effortDisabled = selectedModelInfo !== undefined && !selectedModelInfo.supportsEffort;
+  const effortDisabled = modelsLoading || (selectedModelInfo !== undefined && !selectedModelInfo.supportsEffort);
   const effectiveEffort = effortDisabled || !effortOptions.includes(selectedEffort as EffortLevel) ? "" : selectedEffort;
 
   useEffect(() => {
@@ -153,11 +167,13 @@ export function AskConversation({
     if (!q) return;
     const params = new URLSearchParams({ q });
     if (selectedModel) params.set("model", selectedModel);
-    if (effectiveEffort) params.set("effort", effectiveEffort);
+    // While the list is still loading nothing can be validated yet, so keep whatever was chosen/carried in the URL.
+    const effort = modelsLoading ? selectedEffort : effectiveEffort;
+    if (effort) params.set("effort", effort);
     router.push(`/ask?${params.toString()}`);
   }
 
-  const usedModelName = usedModel ? models.find((m) => m.value === usedModel || m.resolvedModel === usedModel)?.displayName ?? usedModel : null;
+  const usedModelName = usedModel ? availableModels.find((m) => m.value === usedModel || m.resolvedModel === usedModel)?.displayName ?? usedModel : null;
 
   return (
     <>
@@ -180,10 +196,10 @@ export function AskConversation({
       <div className="ask-options">
         <label>
           Model
-          <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
-            <option value="">Default</option>
+          <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={modelsLoading}>
+            <option value="">{modelsLoading ? "Loading models…" : "Default"}</option>
             {selectedModel && !selectedModelInfo && <option value={selectedModel}>{selectedModel}</option>}
-            {models.map((m) => (
+            {availableModels.map((m) => (
               <option key={m.value} value={m.value}>{m.displayName}</option>
             ))}
           </select>
@@ -201,7 +217,11 @@ export function AskConversation({
             ))}
           </select>
         </label>
-        {modelsError && <span className="ask-options-note">{modelsError}</span>}
+        {modelsError && (
+          <span className="ask-options-note">
+            {modelsError} <button type="button" className="ask-options-retry" onClick={retryModels}>Retry</button>
+          </span>
+        )}
       </div>
       <div className="prompt-row">
         {prompts.map((prompt) => (
