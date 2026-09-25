@@ -6,6 +6,7 @@ import {
   acceptTopicProposal,
   addItemNote,
   addItemTag,
+  addTopicImage,
   addTopicNote,
   addTopicTag,
   createItem,
@@ -13,6 +14,7 @@ import {
   deleteItem,
   deleteItemNote,
   deleteTopic,
+  deleteTopicImage,
   deleteTopicNote,
   mergeTopics,
   moveItemsTopic,
@@ -465,6 +467,37 @@ export async function deleteTopicNoteAction(formData: FormData): Promise<void> {
   revalidatePath("/topics");
   revalidatePath(`/topics/${topicId}`);
   redirect(`/topics/${encodeURIComponent(topicId)}`);
+}
+
+export async function addTopicImageAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const topicPath = `/topics/${encodeURIComponent(topicId)}`;
+  const file = formData.get("image");
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(`${topicPath}?error=${encodeURIComponent("Choose an image to upload")}`);
+  }
+
+  try {
+    await addTopicImage(topicId, file);
+  } catch (err) {
+    redirect(`${topicPath}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath(`/topics/${topicId}`);
+  redirect(topicPath);
+}
+
+export async function deleteTopicImageAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const imageId = String(formData.get("imageId") ?? "");
+  const topicPath = `/topics/${encodeURIComponent(topicId)}`;
+
+  try {
+    await deleteTopicImage(topicId, imageId);
+  } catch (err) {
+    redirect(`${topicPath}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath(`/topics/${topicId}`);
+  redirect(topicPath);
 }
 
 export async function updateItemNoteAction(formData: FormData): Promise<void> {

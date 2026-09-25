@@ -13,6 +13,7 @@ from botocore.config import Config
 class S3Config:
     bucket: str
     prefix: str
+    images_prefix: str
     endpoint_url: str
     region: str
 
@@ -27,6 +28,7 @@ def _config() -> S3Config:
     return S3Config(
         bucket=bucket,
         prefix=os.environ.get("S3_PREFIX", ""),
+        images_prefix=os.environ.get("S3_IMAGES_PREFIX") or "images/",
         endpoint_url=endpoint_url,
         region=os.environ.get("S3_REGION", "us-east-1"),
     )
@@ -66,6 +68,29 @@ def fetch_object_text(key: str) -> str:
     client = _get_client(config.endpoint_url, config.region)
     response = client.get_object(Bucket=config.bucket, Key=key)
     return response["Body"].read().decode("utf8")
+
+
+def topic_image_key(topic_id: str, image_id: str, extension: str) -> str:
+    """Key for a topic image: <images prefix>topics/<topicId>/<imageId>.<ext> (inside the same bucket as the extracts)."""
+    return f"{_config().images_prefix}topics/{topic_id}/{image_id}.{extension}"
+
+
+def put_object(key: str, body: bytes, content_type: str) -> None:
+    config = _config()
+    client = _get_client(config.endpoint_url, config.region)
+    client.put_object(Bucket=config.bucket, Key=key, Body=body, ContentType=content_type)
+
+
+def get_object_bytes(key: str) -> bytes:
+    config = _config()
+    client = _get_client(config.endpoint_url, config.region)
+    return client.get_object(Bucket=config.bucket, Key=key)["Body"].read()
+
+
+def delete_object(key: str) -> None:
+    config = _config()
+    client = _get_client(config.endpoint_url, config.region)
+    client.delete_object(Bucket=config.bucket, Key=key)
 
 
 def clear_client_cache() -> None:

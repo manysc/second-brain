@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -9,12 +10,13 @@ import numpy as np
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
-from app import db, embeddings, topic_priority
+from app import db, embeddings, s3_store, topic_priority
 from app.db_models import (
     KnowledgeItemRow,
     MeetingRow,
     NoteRow,
     ReviewCandidateRow,
+    TopicImageRow,
     TopicPriorityHistoryRow,
     TopicRow,
 )
@@ -45,11 +47,14 @@ from app.models import (
     TopicLink,
     TopicMergeSuggestion,
     TopicPriorityHistoryEntry,
+    TopicImage,
     TopicPriorityInfo,
     TopicPrioritySignal,
     TopicProposal,
     normalize_tag,
 )
+
+logger = logging.getLogger(__name__)
 
 UNCATEGORIZED_TOPIC = "Uncategorized"
 
@@ -415,6 +420,12 @@ def _topic_from_row(row: TopicRow) -> Topic:
         priority=_priority_info_from_row(row),
         notes=[_note_from_row(n) for n in row.notes],
         tags=list(row.tags or []),
+        images=[
+            TopicImage(
+                id=i.id, filename=i.filename, content_type=i.content_type, size=i.size, created_at=i.created_at
+            )
+            for i in row.images
+        ],
     )
 
 
@@ -642,6 +653,104 @@ def delete_topic_note(topic_id: str, note_id: str) -> Topic | None:
         row.notes = [n for n in row.notes if n.id != note_id]
         session.commit()
     return get_topic_by_id(topic_id)
+
+
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+class UnsupportedImageType(Exception):
+    pass
+
+
+class ImageTooLarge(Exception):
+    pass
+
+
+def _sniff_image_type(body: bytes) -> tuple[str, str] | None:
+    """(content type, file extension) from the leading magic bytes; the client-declared type is never trusted."""
+    if body.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png", "png"
+    if body.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg", "jpg"
+    if body.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif", "gif"
+    if body[:4] == b"RIFF" and body[8:12] == b"WEBP":
+        return "image/webp", "webp"
+    return None
+
+
+def _display_filename(filename: str | None) -> str:
+    # shown in the UI only; the S3 key never contains it
+    name = (filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    name = "".join(ch for ch in name if ch.isprintable()).strip()
+    return name[:200] or "image"
+
+
+def _delete_image_objects(keys: list[str]) -> None:
+    """Best-effort: a failed delete leaves an unreferenced object, which is preferable to failing the request."""
+    for key in keys:
+        try:
+            s3_store.delete_object(key)
+        except Exception:
+            logger.warning("could not delete image object %s from S3", key, exc_info=True)
+
+
+def add_topic_image(topic_id: str, filename: str | None, body: bytes) -> Topic | None:
+    """Stores the image in S3 and records it on the topic. None if the topic is missing."""
+    if len(body) > MAX_IMAGE_BYTES:
+        raise ImageTooLarge(MAX_IMAGE_BYTES)
+    sniffed = _sniff_image_type(body)
+    if sniffed is None:
+        raise UnsupportedImageType()
+    content_type, extension = sniffed
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        image_id = uuid.uuid4().hex
+        key = s3_store.topic_image_key(topic_id, image_id, extension)
+        s3_store.put_object(key, body, content_type)
+        try:
+            row.images.append(
+                TopicImageRow(
+                    id=image_id,
+                    key=key,
+                    filename=_display_filename(filename),
+                    content_type=content_type,
+                    size=len(body),
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                )
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            _delete_image_objects([key])
+            raise
+    return get_topic_by_id(topic_id)
+
+
+def delete_topic_image(topic_id: str, image_id: str) -> Topic | None:
+    """Removes the image row and its S3 object. None if the topic is missing; a missing image is a no-op."""
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        doomed = [i for i in row.images if i.id == image_id]
+        keys = [i.key for i in doomed]
+        row.images = [i for i in row.images if i.id != image_id]
+        session.commit()
+    _delete_image_objects(keys)
+    return get_topic_by_id(topic_id)
+
+
+def get_topic_image(topic_id: str, image_id: str) -> tuple[bytes, str] | None:
+    """(bytes, content type) of a topic's image, or None if the topic has no such image."""
+    with db.get_session() as session:
+        image = session.get(TopicImageRow, image_id)
+        if image is None or image.topic_id != topic_id:
+            return None
+        key, content_type = image.key, image.content_type
+    return s3_store.get_object_bytes(key), content_type
 
 
 class TooManyTags(Exception):
@@ -873,9 +982,11 @@ def delete_topic(topic_id: str) -> bool:
             return False
         if row.items:
             raise TopicHasItems(len(row.items))
+        image_keys = [i.key for i in row.images]
         session.delete(row)
         session.commit()
-        return True
+    _delete_image_objects(image_keys)
+    return True
 
 
 def assign_item_topic(item_id: str, topic_id: str | None) -> KnowledgeItem | None:
@@ -945,6 +1056,10 @@ def merge_topics(source_topic_id: str, target_topic_id: str) -> Topic:
         )
         # keep the source topic's notes: repoint them before the delete cascades over them
         session.execute(update(NoteRow).where(NoteRow.topic_id == source_topic_id).values(topic_id=target_topic_id))
+        # same for images: the S3 objects stay where they are, only the owning topic changes
+        session.execute(
+            update(TopicImageRow).where(TopicImageRow.topic_id == source_topic_id).values(topic_id=target_topic_id)
+        )
         session.expire(source)
         session.delete(source)
         session.commit()

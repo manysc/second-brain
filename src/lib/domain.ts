@@ -128,6 +128,14 @@ export type TopicPriorityHistoryEntry = {
 
 export type OpenClosed = "Open" | "Closed";
 
+export type TopicImage = {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  createdAt: string;
+};
+
 export type Topic = {
   id: string;
   name: string;
@@ -137,6 +145,7 @@ export type Topic = {
   priority: TopicPriorityInfo | null;
   notes: Note[];
   tags: string[];
+  images: TopicImage[];
 };
 
 export type SearchResult = {

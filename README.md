@@ -33,6 +33,7 @@ pip install -r requirements.txt
 | --- | --- | --- |
 | `S3_BUCKET` | Bucket holding meeting extract JSON files (required) | `second-brain` |
 | `S3_PREFIX` | Key prefix to list under (optional) | `meetings/` |
+| `S3_IMAGES_PREFIX` | Key prefix for images attached to topics (optional, defaults to `images/`) | `images/` |
 | `S3_ENDPOINT_URL` | SeaweedFS S3 gateway URL (required) | `http://localhost:8334` |
 | `S3_REGION` | Arbitrary region (SeaweedFS doesn't validate it) | `us-east-1` |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Must match an identity in the `seaweedfs` compose service's config | `second_brain` / `second_brain_dev_secret` |
@@ -43,6 +44,16 @@ Bootstrap the bucket with the sample extraction files (also reads `backend/.env`
 ```bash
 python scripts/seed_seaweedfs.py
 ```
+
+### Topic images
+
+Images attached to a topic are stored in the same bucket as the extracts, under `S3_IMAGES_PREFIX`
+(`images/topics/<topicId>/<imageId>.<ext>`), so ingestion (which only reads `S3_PREFIX`) never sees
+them and the `seaweedfs-backup` service backs them up with everything else. Postgres keeps only the
+metadata (`topic_images` table). The bucket stays private: the browser loads images through the
+Next.js route `/api/topics/<id>/images/<imageId>`, which proxies the FastAPI endpoint. Uploads accept
+PNG, JPEG, GIF and WebP up to 5 MB (checked on the file's bytes, not its name), and deleting an image
+or a topic removes the S3 objects too.
 
 ### When extracts are processed
 

@@ -1,7 +1,7 @@
 """SQLAlchemy ORM tables backing the domain models in app/models.py."""
 from __future__ import annotations
 
-from sqlalchemy import ARRAY, CheckConstraint, Float, ForeignKey, String, Text
+from sqlalchemy import ARRAY, CheckConstraint, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -40,6 +40,9 @@ class TopicRow(Base):
     items: Mapped[list["KnowledgeItemRow"]] = relationship(back_populates="topic")
     notes: Mapped[list["NoteRow"]] = relationship(
         back_populates="topic", cascade="all, delete-orphan", lazy="selectin", order_by="NoteRow.created_at"
+    )
+    images: Mapped[list["TopicImageRow"]] = relationship(
+        back_populates="topic", cascade="all, delete-orphan", lazy="selectin", order_by="TopicImageRow.created_at"
     )
 
     # -- automatic priority classification (calculated_* set only by topic_priority.py) --
@@ -153,3 +156,19 @@ class NoteRow(Base):
 
     item: Mapped[KnowledgeItemRow | None] = relationship(back_populates="notes")
     topic: Mapped[TopicRow | None] = relationship(back_populates="notes")
+
+
+class TopicImageRow(Base):
+    """Metadata for an image attached to a topic; the bytes live in S3 (SeaweedFS) under `key`."""
+
+    __tablename__ = "topic_images"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    topic_id: Mapped[str] = mapped_column(ForeignKey("topics.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String)
+    filename: Mapped[str] = mapped_column(String)
+    content_type: Mapped[str] = mapped_column(String)
+    size: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[str] = mapped_column(String)
+
+    topic: Mapped[TopicRow] = relationship(back_populates="images")

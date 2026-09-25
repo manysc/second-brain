@@ -48,6 +48,14 @@ class NoteCreate(CamelModel):
         return v
 
 
+class TopicImage(CamelModel):
+    id: str
+    filename: str
+    content_type: str = Field(alias="contentType")
+    size: int
+    created_at: str = Field(alias="createdAt")
+
+
 MAX_TAG_LENGTH = 40
 MAX_TAGS = 20
 
@@ -238,6 +246,7 @@ class Topic(CamelModel):
     priority: TopicPriorityInfo | None = None
     notes: list[Note] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    images: list[TopicImage] = Field(default_factory=list)
 
 
 class TopicCreate(CamelModel):

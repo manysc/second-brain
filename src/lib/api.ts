@@ -39,6 +39,16 @@ async function apiMutate<T>(path: string, method: "POST" | "PATCH" | "DELETE", b
   return res.status === 204 ? (undefined as T) : (res.json() as Promise<T>);
 }
 
+// multipart upload: the Content-Type header is left unset so fetch adds the boundary itself
+async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, { method: "POST", body: form, cache: "no-store" });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null);
+    throw new Error(payload?.detail ?? `Backend request failed: ${path} (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}
+
 
 export function getMeeting(): Promise<Meeting> {
   return apiFetch<Meeting>("/api/meeting");
@@ -200,6 +210,23 @@ export function deleteItemNote(id: string, noteId: string): Promise<KnowledgeIte
 
 export function addTopicNote(id: string, body: string): Promise<Topic> {
   return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/notes`, "POST", { body });
+}
+
+export function addTopicImage(id: string, file: File): Promise<Topic> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiUpload<Topic>(`/api/topics/${encodeURIComponent(id)}/images`, form);
+}
+
+export function deleteTopicImage(id: string, imageId: string): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`, "DELETE");
+}
+
+// raw backend response (bytes + content type) for the image proxy route; callers check `ok`
+export function fetchTopicImage(id: string, imageId: string): Promise<Response> {
+  return fetch(`${API_BASE_URL}/api/topics/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`, {
+    cache: "no-store",
+  });
 }
 
 export function addTopicTag(id: string, tag: string): Promise<Topic> {

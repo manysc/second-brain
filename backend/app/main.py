@@ -10,7 +10,7 @@ from typing import AsyncIterator
 
 from botocore.exceptions import ConnectionClosedError, EndpointConnectionError
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import data, db, ingest
@@ -435,6 +435,41 @@ def delete_topic_note(topic_id: str, note_id: str) -> Topic:
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
     return topic
+
+
+@app.post("/api/topics/{topic_id}/images", response_model=Topic)
+def add_topic_image(topic_id: str, file: UploadFile) -> Topic:
+    # read one byte past the limit so an oversize upload is rejected without buffering all of it
+    body = file.file.read(data.MAX_IMAGE_BYTES + 1)
+    try:
+        topic = data.add_topic_image(topic_id, file.filename, body)
+    except data.ImageTooLarge:
+        raise HTTPException(
+            status_code=413, detail=f"Image is larger than {data.MAX_IMAGE_BYTES // (1024 * 1024)} MB"
+        )
+    except data.UnsupportedImageType:
+        raise HTTPException(status_code=415, detail="Only PNG, JPEG, GIF and WebP images are supported")
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+@app.delete("/api/topics/{topic_id}/images/{image_id}", response_model=Topic)
+def delete_topic_image(topic_id: str, image_id: str) -> Topic:
+    topic = data.delete_topic_image(topic_id, image_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+@app.get("/api/topics/{topic_id}/images/{image_id}")
+def get_topic_image(topic_id: str, image_id: str) -> Response:
+    image = data.get_topic_image(topic_id, image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    body, content_type = image
+    # image ids are never reused, so the bytes behind a URL never change
+    return Response(content=body, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
 @app.get("/api/review", response_model=list[ReviewCandidate])

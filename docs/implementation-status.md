@@ -1,5 +1,19 @@
 # Implementation status
 
+## Topic images (2026-09-25)
+
+Users can add and remove images on a Topic. Bytes live in SeaweedFS under `images/topics/<topicId>/`
+in the existing `second-brain` bucket (`S3_IMAGES_PREFIX`); metadata lives in the new `topic_images`
+table.
+
+- Backend: `s3_store.put_object/get_object_bytes/delete_object`, `TopicImageRow`, `data.add_topic_image /
+  delete_topic_image / get_topic_image`, and `POST|GET|DELETE /api/topics/{id}/images[/{imageId}]`.
+  Deleting a topic removes its objects; merging repoints the images to the target topic.
+- Frontend: `TopicImages` section on the topic page, server actions `addTopicImageAction` /
+  `deleteTopicImageAction`, and a proxy route handler so the private bucket is never exposed.
+  `next.config.ts` raises the Server Action body limit to 6 MB.
+- Not covered: MCP tools do not upload/remove images; no captions, reordering or editing.
+
 ## Automatic Topic Priority Classification (2026-09-16)
 
 Deterministic, explainable Topic priority classification (CRITICAL / MAJOR / MINOR), with an

@@ -9,12 +9,15 @@ import { PriorityOverrideForm } from "@/components/PriorityOverrideForm";
 import { RelatedTopics } from "@/components/RelatedTopics";
 import { getMeetings, getRelatedTopics, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
 import { NotesSection } from "@/components/NotesSection";
+import { TopicImages } from "@/components/TopicImages";
 import { TopicTags } from "@/components/TopicTags";
 import { AddItemForm } from "@/components/AddItemForm";
 import { EditItemForm } from "@/components/EditItemForm";
 import {
+  addTopicImageAction,
   addTopicNoteAction,
   deleteTopicAction,
+  deleteTopicImageAction,
   deleteTopicNoteAction,
   recalculatePriorityAction,
   setTopicStatusAction,
@@ -143,6 +146,15 @@ export default async function TopicDetail({
           addAction={addTopicNoteAction}
           editAction={updateTopicNoteAction}
           deleteAction={deleteTopicNoteAction}
+        />
+      </section>
+      <section className="priority-section topic-images">
+        <p className="eyebrow">Images{topic.images.length ? ` (${topic.images.length})` : ""}</p>
+        <TopicImages
+          topicId={topic.id}
+          images={topic.images}
+          addAction={addTopicImageAction}
+          deleteAction={deleteTopicImageAction}
         />
       </section>
       {topic.name === "Uncategorized" ? <SuggestedItemTopics suggestions={suggestions} /> : null}
