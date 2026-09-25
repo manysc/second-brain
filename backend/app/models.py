@@ -48,6 +48,29 @@ class NoteCreate(CamelModel):
         return v
 
 
+MAX_TAG_LENGTH = 40
+MAX_TAGS = 20
+
+
+def normalize_tag(value: str) -> str:
+    """Trims, lowercases and collapses inner whitespace so 'Q3  Launch' and 'q3 launch' are one tag."""
+    return " ".join(value.split()).lower()
+
+
+class TagCreate(CamelModel):
+    tag: str = Field(min_length=1, max_length=MAX_TAG_LENGTH * 2)
+
+    @field_validator("tag")
+    @classmethod
+    def _normalize_tag(cls, v: str) -> str:
+        v = normalize_tag(v)
+        if not v:
+            raise ValueError("Tag cannot be empty")
+        if len(v) > MAX_TAG_LENGTH:
+            raise ValueError(f"Tag cannot be longer than {MAX_TAG_LENGTH} characters")
+        return v
+
+
 class ItemCreate(CamelModel):
     type: ItemType
     description: str = Field(min_length=1, max_length=2000)
@@ -130,6 +153,7 @@ class KnowledgeItem(CamelModel):
     effective_priority: TopicPriorityLevel | None = Field(default=None, alias="effectivePriority")
     manual_override: ManualPriorityOverride | None = Field(default=None, alias="manualOverride")
     notes: list[Note] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 class ReviewCandidate(CamelModel):
@@ -213,6 +237,7 @@ class Topic(CamelModel):
     stakeholders: list[str]
     priority: TopicPriorityInfo | None = None
     notes: list[Note] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 class TopicCreate(CamelModel):

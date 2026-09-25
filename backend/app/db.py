@@ -42,6 +42,18 @@ def init_db() -> None:
         _backfill_item_priority_override(conn)
         _backfill_suggested_topic(conn)
         _backfill_topic_status(conn)
+        _backfill_topic_tags(conn)
+        _backfill_item_tags(conn)
+
+
+def _backfill_topic_tags(conn: Connection) -> None:
+    """Idempotent migration: adds topics.tags (human-assigned labels)."""
+    conn.execute(text("ALTER TABLE topics ADD COLUMN IF NOT EXISTS tags VARCHAR[] NOT NULL DEFAULT '{}'"))
+
+
+def _backfill_item_tags(conn: Connection) -> None:
+    """Idempotent migration: adds knowledge_items.tags (human-assigned labels)."""
+    conn.execute(text("ALTER TABLE knowledge_items ADD COLUMN IF NOT EXISTS tags VARCHAR[] NOT NULL DEFAULT '{}'"))
 
 
 def _backfill_topic_status(conn: Connection) -> None:

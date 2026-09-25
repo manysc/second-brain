@@ -9,6 +9,7 @@ import { PriorityOverrideForm } from "@/components/PriorityOverrideForm";
 import { RelatedTopics } from "@/components/RelatedTopics";
 import { getMeetings, getRelatedTopics, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
 import { NotesSection } from "@/components/NotesSection";
+import { TopicTags } from "@/components/TopicTags";
 import { AddItemForm } from "@/components/AddItemForm";
 import { EditItemForm } from "@/components/EditItemForm";
 import {
@@ -89,6 +90,7 @@ export default async function TopicDetail({
           </button>
         </form>
       </div>
+      <TopicTags topicId={topic.id} tags={topic.tags} />
       <PriorityDetailsPanel>
       <section className="priority-section">
         <p className="eyebrow">Priority</p>

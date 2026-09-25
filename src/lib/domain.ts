@@ -1,3 +1,7 @@
+// tag limits; keep in sync with backend/app/models.py
+export const MAX_TAG_LENGTH = 40;
+export const MAX_TAGS = 20;
+
 export type ItemType = "IDEA" | "DECISION" | "ACTION" | "QUESTION";
 export type Confidence = "HIGH" | "MEDIUM" | "LOW";
 
@@ -36,6 +40,7 @@ export type KnowledgeItem = {
   effectivePriority: TopicPriorityLevel | null;
   manualOverride: ManualPriorityOverride | null;
   notes: Note[];
+  tags: string[];
 };
 
 export type ReviewCandidate = {
@@ -131,6 +136,7 @@ export type Topic = {
   stakeholders: string[];
   priority: TopicPriorityInfo | null;
   notes: Note[];
+  tags: string[];
 };
 
 export type SearchResult = {

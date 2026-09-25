@@ -202,6 +202,22 @@ export function addTopicNote(id: string, body: string): Promise<Topic> {
   return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/notes`, "POST", { body });
 }
 
+export function addTopicTag(id: string, tag: string): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/tags`, "POST", { tag });
+}
+
+export function removeTopicTag(id: string, tag: string): Promise<Topic> {
+  return apiMutate<Topic>(`/api/topics/${encodeURIComponent(id)}/tags?tag=${encodeURIComponent(tag)}`, "DELETE");
+}
+
+export function addItemTag(id: string, tag: string): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(id)}/tags`, "POST", { tag });
+}
+
+export function removeItemTag(id: string, tag: string): Promise<KnowledgeItem> {
+  return apiMutate<KnowledgeItem>(`/api/items/${encodeURIComponent(id)}/tags?tag=${encodeURIComponent(tag)}`, "DELETE");
+}
+
 export type NewItem = {
   type: ItemType;
   description: string;

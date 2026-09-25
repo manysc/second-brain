@@ -34,6 +34,8 @@ class TopicRow(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True)
     status: Mapped[str] = mapped_column(String, default="Open", server_default="Open")
+    # free-text labels set by a human; stored normalised (see models.normalize_tag)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, server_default="{}")
 
     items: Mapped[list["KnowledgeItemRow"]] = relationship(back_populates="topic")
     notes: Mapped[list["NoteRow"]] = relationship(
@@ -88,6 +90,8 @@ class KnowledgeItemRow(Base):
     manual_priority_override: Mapped[str | None] = mapped_column(String, nullable=True)
     manual_override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     manual_override_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    # free-text labels set by a human; stored normalised (see models.normalize_tag)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, server_default="{}")
 
     meeting: Mapped[MeetingRow] = relationship(back_populates="items")
     topic: Mapped[TopicRow | None] = relationship(back_populates="items")

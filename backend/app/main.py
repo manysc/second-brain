@@ -34,6 +34,7 @@ from app.models import (
     ReviewStatusUpdate,
     SearchResult,
     StatusUpdate,
+    TagCreate,
     Topic,
     TopicCreate,
     TopicMerge,
@@ -340,6 +341,26 @@ def set_topic_status(topic_id: str, payload: StatusUpdate) -> Topic:
     return topic
 
 
+@app.post("/api/items/{item_id}/tags", response_model=KnowledgeItem)
+def add_item_tag(item_id: str, payload: TagCreate) -> KnowledgeItem:
+    try:
+        item = data.add_item_tag(item_id, payload.tag)
+    except data.TooManyTags as exc:
+        raise HTTPException(status_code=400, detail=f"An item can have at most {exc.args[0]} tags")
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+# the tag travels as a query param, not a path segment: tags are free text and may contain "/"
+@app.delete("/api/items/{item_id}/tags", response_model=KnowledgeItem)
+def remove_item_tag(item_id: str, tag: str = Query(min_length=1)) -> KnowledgeItem:
+    item = data.remove_item_tag(item_id, tag)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
 @app.post("/api/items/{item_id}/notes", response_model=KnowledgeItem)
 def add_item_note(item_id: str, payload: NoteCreate) -> KnowledgeItem:
     item = data.add_item_note(item_id, payload.body)
@@ -375,6 +396,26 @@ def update_topic_note(topic_id: str, note_id: str, payload: NoteCreate) -> Topic
 @app.post("/api/topics/{topic_id}/notes", response_model=Topic)
 def add_topic_note(topic_id: str, payload: NoteCreate) -> Topic:
     topic = data.add_topic_note(topic_id, payload.body)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+@app.post("/api/topics/{topic_id}/tags", response_model=Topic)
+def add_topic_tag(topic_id: str, payload: TagCreate) -> Topic:
+    try:
+        topic = data.add_topic_tag(topic_id, payload.tag)
+    except data.TooManyTags as exc:
+        raise HTTPException(status_code=400, detail=f"A topic can have at most {exc.args[0]} tags")
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return topic
+
+
+# the tag travels as a query param, not a path segment: tags are free text and may contain "/"
+@app.delete("/api/topics/{topic_id}/tags", response_model=Topic)
+def remove_topic_tag(topic_id: str, tag: str = Query(min_length=1)) -> Topic:
+    topic = data.remove_topic_tag(topic_id, tag)
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
     return topic

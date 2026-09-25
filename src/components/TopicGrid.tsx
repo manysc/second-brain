@@ -6,6 +6,7 @@ import type { Topic } from "@/lib/domain";
 import { mergeTopicsAction } from "@/lib/actions";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TagChip } from "@/components/TagChip";
 
 // HTML5 drag-and-drop data type used to identify the dragged topic across cards
 const DRAG_DATA_TYPE = "text/topic-id";
@@ -67,6 +68,13 @@ export function TopicGrid({ topics }: { topics: Topic[] }) {
             </div>
             <h2>{topic.name}</h2>
             <p>{topic.items[0]?.description ?? "No items yet"}</p>
+            {topic.tags.length ? (
+              <div className="topic-tags-list">
+                {topic.tags.map((tag) => (
+                  <TagChip key={tag} tag={tag} />
+                ))}
+              </div>
+            ) : null}
             <div className="topic-stats">
               <span><b>{topic.items.length}</b> items</span>
               <span><b>{decisions}</b> decisions</span>

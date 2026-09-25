@@ -19,6 +19,7 @@ from app.db_models import (
     TopicRow,
 )
 from app.models import (
+    MAX_TAGS,
     Evidence,
     FollowUpRelatedItem,
     FollowUpResponse,
@@ -47,6 +48,7 @@ from app.models import (
     TopicPriorityInfo,
     TopicPrioritySignal,
     TopicProposal,
+    normalize_tag,
 )
 
 UNCATEGORIZED_TOPIC = "Uncategorized"
@@ -150,6 +152,7 @@ def _item_from_row(row: KnowledgeItemRow) -> KnowledgeItem:
         effective_priority=effective_priority,
         manual_override=manual_override,
         notes=[_note_from_row(n) for n in row.notes],
+        tags=list(row.tags or []),
     )
 
 
@@ -411,6 +414,7 @@ def _topic_from_row(row: TopicRow) -> Topic:
         stakeholders=list(dict.fromkeys(s for item in items for s in item.stakeholders)),
         priority=_priority_info_from_row(row),
         notes=[_note_from_row(n) for n in row.notes],
+        tags=list(row.tags or []),
     )
 
 
@@ -638,6 +642,69 @@ def delete_topic_note(topic_id: str, note_id: str) -> Topic | None:
         row.notes = [n for n in row.notes if n.id != note_id]
         session.commit()
     return get_topic_by_id(topic_id)
+
+
+class TooManyTags(Exception):
+    pass
+
+
+def _with_tag(current: list[str] | None, tag: str) -> list[str]:
+    """`current` plus the normalised tag; a tag already present is a no-op."""
+    tag = normalize_tag(tag)
+    tags = list(current or [])
+    if tag in tags:
+        return tags
+    if len(tags) >= MAX_TAGS:
+        raise TooManyTags(MAX_TAGS)
+    return [*tags, tag]
+
+
+def _without_tag(current: list[str] | None, tag: str) -> list[str]:
+    tag = normalize_tag(tag)
+    return [t for t in (current or []) if t != tag]
+
+
+# Tag lists are reassigned (never appended to) below: SQLAlchemy doesn't track in-place mutation of ARRAY columns.
+def add_topic_tag(topic_id: str, tag: str) -> Topic | None:
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        row.tags = _with_tag(row.tags, tag)
+        session.commit()
+    return get_topic_by_id(topic_id)
+
+
+def remove_topic_tag(topic_id: str, tag: str) -> Topic | None:
+    with db.get_session() as session:
+        row = session.get(TopicRow, topic_id)
+        if row is None:
+            return None
+        row.tags = _without_tag(row.tags, tag)
+        session.commit()
+    return get_topic_by_id(topic_id)
+
+
+def add_item_tag(item_id: str, tag: str) -> KnowledgeItem | None:
+    with db.get_session() as session:
+        row = session.get(KnowledgeItemRow, item_id)
+        if row is None:
+            return None
+        row.tags = _with_tag(row.tags, tag)
+        session.commit()
+        session.refresh(row)
+        return _item_from_row(row)
+
+
+def remove_item_tag(item_id: str, tag: str) -> KnowledgeItem | None:
+    with db.get_session() as session:
+        row = session.get(KnowledgeItemRow, item_id)
+        if row is None:
+            return None
+        row.tags = _without_tag(row.tags, tag)
+        session.commit()
+        session.refresh(row)
+        return _item_from_row(row)
 
 
 def get_priority_history(topic_id: str) -> list[TopicPriorityHistoryEntry]:

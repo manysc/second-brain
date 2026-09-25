@@ -3,6 +3,8 @@ import type { KnowledgeItem } from "@/lib/domain";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NotesSection } from "@/components/NotesSection";
+import { ItemTags } from "@/components/ItemTags";
+import { TagChip } from "@/components/TagChip";
 import {
   addItemNoteAction,
   clearItemPriorityOverrideAction,
@@ -35,6 +37,13 @@ export function KnowledgeCard({ item }: { item: KnowledgeItem }) {
         <PriorityBadge priority={priorityInfo} />
       </div>
       <h3>{item.description}</h3>
+      {item.tags.length ? (
+        <div className="topic-tags-list">
+          {item.tags.map((tag) => (
+            <TagChip key={tag} tag={tag} />
+          ))}
+        </div>
+      ) : null}
       {item.type === "QUESTION" || item.type === "ACTION" ? (
         <div className="card-status">
           <StatusBadge status={item.status} />
@@ -90,6 +99,7 @@ export function KnowledgeCard({ item }: { item: KnowledgeItem }) {
           )}
         </details>
       </div>
+      <ItemTags itemId={item.id} tags={item.tags} />
       <details className="item-notes">
         <summary>{item.notes.length ? `Notes (${item.notes.length})` : "Add note"}</summary>
         <NotesSection

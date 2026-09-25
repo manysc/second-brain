@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 import {
   acceptTopicProposal,
   addItemNote,
+  addItemTag,
   addTopicNote,
+  addTopicTag,
   createItem,
   createTopic,
   deleteItem,
@@ -17,6 +19,8 @@ import {
   moveItemTopic,
   recalculateTopicPriority,
   rejectTopicProposal,
+  removeItemTag,
+  removeTopicTag,
   setItemPriorityOverride,
   setItemStatus,
   setTopicPriorityOverride,
@@ -28,6 +32,7 @@ import {
   updateTopicNote,
 } from "./api";
 import type { ItemPatch } from "./api";
+import { MAX_TAG_LENGTH } from "./domain";
 import type { ItemType, OpenClosed, TopicPriorityLevel } from "./domain";
 
 function errorMessage(err: unknown): string {
@@ -312,6 +317,66 @@ export async function addTopicNoteAction(formData: FormData): Promise<void> {
   revalidatePath("/topics");
   revalidatePath(`/topics/${topicId}`);
   redirect(`/topics/${encodeURIComponent(topicId)}`);
+}
+
+export async function addTopicTagAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const topicPath = `/topics/${encodeURIComponent(topicId)}`;
+  const tag = String(formData.get("tag") ?? "").trim();
+  if (!tag) redirect(`${topicPath}?error=${encodeURIComponent("Tag cannot be empty")}`);
+  if (tag.length > MAX_TAG_LENGTH) {
+    redirect(`${topicPath}?error=${encodeURIComponent(`Tag cannot be longer than ${MAX_TAG_LENGTH} characters`)}`);
+  }
+
+  try {
+    await addTopicTag(topicId, tag);
+  } catch (err) {
+    redirect(`${topicPath}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath("/topics");
+  revalidatePath(`/topics/${topicId}`);
+  redirect(topicPath);
+}
+
+export async function removeTopicTagAction(formData: FormData): Promise<void> {
+  const topicId = String(formData.get("topicId") ?? "");
+  const topicPath = `/topics/${encodeURIComponent(topicId)}`;
+  const tag = String(formData.get("tag") ?? "");
+
+  try {
+    await removeTopicTag(topicId, tag);
+  } catch (err) {
+    redirect(`${topicPath}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+  revalidatePath("/topics");
+  revalidatePath(`/topics/${topicId}`);
+  redirect(topicPath);
+}
+
+// the item tag forms live on KnowledgeCard, which renders on many pages, so (like the other item actions)
+// these don't redirect; the topic and meeting detail pages need explicit revalidation on top of the shared set
+function revalidateItemTagPaths(): void {
+  revalidateItemPriorityAffectedPaths();
+  revalidatePath("/topics/[id]", "page");
+  revalidatePath("/meetings/[id]", "page");
+}
+
+export async function addItemTagAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const tag = String(formData.get("tag") ?? "").trim();
+  if (!tag || tag.length > MAX_TAG_LENGTH) return;
+
+  await addItemTag(itemId, tag);
+  revalidateItemTagPaths();
+}
+
+export async function removeItemTagAction(formData: FormData): Promise<void> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const tag = String(formData.get("tag") ?? "");
+  if (!tag) return;
+
+  await removeItemTag(itemId, tag);
+  revalidateItemTagPaths();
 }
 
 const ITEM_TYPES: ItemType[] = ["IDEA", "QUESTION", "DECISION", "ACTION"];
