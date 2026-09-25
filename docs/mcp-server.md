@@ -121,7 +121,7 @@ Every result marks where information came from: `retrieved` (stored fact), `gene
 
 `/ask` answers free-form questions through the same tools Claude Code uses. `src/app/api/ask/route.ts` runs the Claude Agent SDK
 (`@anthropic-ai/claude-agent-sdk`) with this MCP server attached and streams newline-delimited JSON events
-(`text`, `tool`, `done`, `error`) to `src/components/AskConversation.tsx`.
+(`meta`, `text`, `tool`, `done`, `error`) to `src/components/AskConversation.tsx`.
 
 - Requires `ANTHROPIC_API_KEY` (or a logged-in Claude Code) in the Next.js server environment.
 - Read-only by construction: built-in tools are disabled, only the `brain_*` read tools are allowed, the two write tools
@@ -130,6 +130,13 @@ Every result marks where information came from: `retrieved` (stored fact), `gene
 - Limits: prompts are capped at 2000 characters, 12 agent turns and 120 seconds per request.
 - The system prompt mirrors `INSTRUCTIONS` in `backend/mcp_server/server.py`; keep the two in sync.
 - Answers cite record IDs as `[id]`; topic IDs link to `/topics/{id}` and item IDs link to their meeting.
+- Follow-ups: the first `meta` event carries a `sessionId`; the page sends it back with each follow-up and the route resumes
+  that Agent SDK session (`resume`), so the model keeps earlier tool results. The allowlist, `dontAsk` and read-only env are
+  re-applied on every turn. A conversation is capped at 20 questions in the UI.
+- Session safety: the SDK resolves a session id across all projects, so a client-supplied id could otherwise resume (and append
+  to) an unrelated Claude Code session. The route therefore only accepts ids it issued itself, recorded as marker files in
+  `<tmpdir>/second-brain-ask/issued/`, and answers anything else with HTTP 410. Ask transcripts live under that directory's project.
+- The transcript is client state only: a page reload restarts from the `?q=` prompt, and old session files stay in the temp directory until the OS clears it.
 
 ## Security and privacy
 

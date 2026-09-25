@@ -30,3 +30,4 @@
 .note-edit { grid-column:1 / span 2; grid-row:3; } .note-edit summary { cursor:pointer; color:#a95240; font-weight:700; font-size:11px; } .note-edit .note-form { margin-top:6px; }
 
 .answer-text { line-height:1.7; font-size:14px; color:var(--ink); margin-top:12px; } .citation { color:#ad5844; font:600 11px monospace; word-break:break-all; } a.citation:hover { text-decoration:underline; } .tool-trace { margin:12px 0; font-size:12px; color:var(--muted); } .tool-trace code { font-size:11px; word-break:break-all; } .ask-error { color:#a65340 !important; }
+.answer.turn { margin-top:20px; } .answer.turn h2 { font-size:17px; line-height:1.4; } .turn-composer { margin-top:24px; } .turn-composer .ask-box { margin-top:0; }

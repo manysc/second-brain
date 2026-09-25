@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { EffortLevel } from "@anthropic-ai/claude-agent-sdk";
@@ -16,12 +18,19 @@ const READ_TOOLS = [
   "brain_list_unresolved_questions",
   "brain_get_recent_changes",
 ].map((name) => `mcp__${SERVER}__${name}`);
-const WRITE_TOOLS = ["brain_update_item", "brain_add_note"].map((name) => `mcp__${SERVER}__${name}`);
+const WRITE_TOOLS = ["brain_update_item", "brain_add_note", "brain_add_item", "brain_edit_item", "brain_delete_item"].map((name) => `mcp__${SERVER}__${name}`);
 
 const MAX_PROMPT_CHARS = 2000;
 const MAX_MODEL_CHARS = 100;
 const MAX_TURNS = 12;
 const TIMEOUT_MS = 120_000;
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Ask conversations run from their own working directory so their transcripts stay out of the repo's Claude Code
+// session list. That does NOT stop a client from resuming other sessions: the SDK resolves a session id across all
+// projects (and appends to that transcript). So only ids this route issued are accepted: each one gets a marker file
+// under SESSION_CWD, and a resume without a marker is refused before the SDK is ever called.
+const SESSION_CWD = path.join(os.tmpdir(), "second-brain-ask");
+const ISSUED_DIR = path.join(SESSION_CWD, "issued");
 const EFFORT_LEVELS = new Set<EffortLevel>(["low", "medium", "high", "xhigh", "max"]);
 
 function parseModel(value: unknown): string | undefined {
@@ -46,7 +55,7 @@ const SYSTEM_PROMPT = [
 type AskEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; input: unknown }
-  | { type: "meta"; model: string; effort: string | null }
+  | { type: "meta"; model: string; effort: string | null; sessionId: string }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -54,17 +63,29 @@ export async function POST(request: Request) {
   let prompt = "";
   let model: string | undefined;
   let effort: EffortLevel | undefined;
+  let sessionId: string | undefined;
   try {
-    const body = (await request.json()) as { prompt?: unknown; model?: unknown; effort?: unknown };
+    const body = (await request.json()) as { prompt?: unknown; model?: unknown; effort?: unknown; sessionId?: unknown };
     prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     model = parseModel(body.model);
     effort = parseEffort(body.effort);
+    if (body.sessionId !== undefined && body.sessionId !== null) {
+      if (typeof body.sessionId !== "string" || !SESSION_ID.test(body.sessionId)) {
+        return Response.json({ error: "sessionId must be a UUID" }, { status: 400 });
+      }
+      sessionId = body.sessionId;
+    }
   } catch {
     // falls through to the empty-prompt check
   }
   if (!prompt) return Response.json({ error: "prompt is required" }, { status: 400 });
   if (prompt.length > MAX_PROMPT_CHARS) {
     return Response.json({ error: `prompt exceeds ${MAX_PROMPT_CHARS} characters` }, { status: 400 });
+  }
+
+  mkdirSync(ISSUED_DIR, { recursive: true });
+  if (sessionId && !existsSync(path.join(ISSUED_DIR, sessionId))) {
+    return Response.json({ error: "This conversation has expired. Start a new conversation." }, { status: 410 });
   }
 
   const abort = new AbortController();
@@ -80,7 +101,8 @@ export async function POST(request: Request) {
           prompt,
           options: {
             abortController: abort,
-            cwd: process.cwd(),
+            cwd: SESSION_CWD,
+            ...(sessionId ? { resume: sessionId } : {}),
             systemPrompt: SYSTEM_PROMPT,
             maxTurns: MAX_TURNS,
             includePartialMessages: true,
@@ -110,7 +132,8 @@ export async function POST(request: Request) {
 
         for await (const message of run) {
           if (message.type === "system" && message.subtype === "init") {
-            send({ type: "meta", model: message.model, effort: message.effort ?? null });
+            writeFileSync(path.join(ISSUED_DIR, message.session_id), "");
+            send({ type: "meta", model: message.model, effort: message.effort ?? null, sessionId: message.session_id });
           } else if (message.type === "stream_event") {
             const event = message.event;
             if (
@@ -135,7 +158,13 @@ export async function POST(request: Request) {
         const aborted = abort.signal.aborted;
         send({
           type: "error",
-          message: aborted ? "The request timed out or was cancelled." : error instanceof Error ? error.message : "Ask failed.",
+          message: aborted
+            ? "The request timed out or was cancelled."
+            : sessionId && error instanceof Error && error.message.includes("No conversation found")
+              ? "This conversation has expired. Start a new conversation."
+              : error instanceof Error
+                ? error.message
+                : "Ask failed.",
         });
       } finally {
         clearTimeout(timeout);

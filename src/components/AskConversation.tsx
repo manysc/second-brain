@@ -2,16 +2,29 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { EffortLevel, ModelInfo } from "@anthropic-ai/claude-agent-sdk";
 
 type ToolCall = { name: string; input: unknown };
+type Turn = {
+  id: number;
+  prompt: string;
+  answer: string;
+  tools: ToolCall[];
+  usedModel: string | null;
+  usedEffort: string | null;
+  error: string | null;
+  running: boolean;
+};
 type AskEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; input: unknown }
-  | { type: "meta"; model: string; effort: string | null }
+  | { type: "meta"; model: string; effort: string | null; sessionId: string }
   | { type: "done" }
   | { type: "error"; message: string };
+
+// Bounds the cost of one conversation; the server also caps each request.
+const MAX_CONVERSATION_TURNS = 20;
 
 // Effort options are never hardcoded: they come from the live "default" model entry (or the union
 // of whatever models are known) so the picker always reflects what the connected account actually supports.
@@ -64,13 +77,18 @@ export function AskConversation({
   initialEffort?: string;
 }) {
   const router = useRouter();
-  const [draft, setDraft] = useState(initialQuery);
-  const [answer, setAnswer] = useState("");
-  const [tools, setTools] = useState<ToolCall[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [running, setRunning] = useState(Boolean(initialQuery));
-  const [usedModel, setUsedModel] = useState<string | null>(null);
-  const [usedEffort, setUsedEffort] = useState<string | null>(null);
+  // The first turn is seeded from ?q= and started by the effect below; follow-ups are appended client-side so
+  // the agent session (sessionIdRef) survives. Only the first prompt lives in the URL.
+  const [draft, setDraft] = useState("");
+  const [turns, setTurns] = useState<Turn[]>(() =>
+    initialQuery
+      ? [{ id: 1, prompt: initialQuery, answer: "", tools: [], usedModel: null, usedEffort: null, error: null, running: true }]
+      : [],
+  );
+  const nextTurnId = useRef(initialQuery ? 1 : 0);
+  const sessionIdRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const endRef = useRef<HTMLDivElement | null>(null);
 
   // null = the model list hasn't loaded yet (listing models spawns the CLI, which can take many seconds).
   const [models, setModels] = useState<ModelInfo[] | null>(null);
@@ -114,17 +132,22 @@ export function AskConversation({
   const effortDisabled = modelsLoading || (selectedModelInfo !== undefined && !selectedModelInfo.supportsEffort);
   const effectiveEffort = effortDisabled || !effortOptions.includes(selectedEffort as EffortLevel) ? "" : selectedEffort;
 
-  useEffect(() => {
-    if (!initialQuery) return;
-    const controller = new AbortController();
-    (async () => {
-      setUsedModel(null);
-      setUsedEffort(null);
+  const updateTurn = useCallback((id: number, change: (turn: Turn) => Turn) => {
+    setTurns((current) => current.map((turn) => (turn.id === id ? change(turn) : turn)));
+  }, []);
+
+  const runTurn = useCallback(
+    async (id: number, prompt: string, model: string | undefined, effort: string | undefined, controller: AbortController) => {
       try {
         const response = await fetch("/api/ask", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: initialQuery, model: initialModel || undefined, effort: initialEffort || undefined }),
+          body: JSON.stringify({
+            prompt,
+            model: model || undefined,
+            effort: effort || undefined,
+            sessionId: sessionIdRef.current ?? undefined,
+          }),
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {
@@ -140,42 +163,83 @@ export function AskConversation({
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
           for (const line of lines) {
-            if (!line.trim()) continue;
+            // A superseded (strict-mode remount) or stopped run must not write into the transcript.
+            if (!line.trim() || controller.signal.aborted) continue;
             const event = JSON.parse(line) as AskEvent;
-            if (event.type === "text") setAnswer((current) => current + event.text);
-            else if (event.type === "tool") setTools((current) => [...current, { name: event.name, input: event.input }]);
-            else if (event.type === "meta") {
-              setUsedModel(event.model);
-              setUsedEffort(event.effort);
-            } else if (event.type === "error") setError(event.message);
+            if (event.type === "text") updateTurn(id, (turn) => ({ ...turn, answer: turn.answer + event.text }));
+            else if (event.type === "tool") {
+              updateTurn(id, (turn) => ({ ...turn, tools: [...turn.tools, { name: event.name, input: event.input }] }));
+            } else if (event.type === "meta") {
+              sessionIdRef.current = event.sessionId;
+              updateTurn(id, (turn) => ({ ...turn, usedModel: event.model, usedEffort: event.effort }));
+            } else if (event.type === "error") updateTurn(id, (turn) => ({ ...turn, error: event.message }));
           }
         }
       } catch (caught) {
         if (!controller.signal.aborted) {
-          setError(caught instanceof Error ? caught.message : "Ask failed.");
+          const message = caught instanceof Error ? caught.message : "Ask failed.";
+          updateTurn(id, (turn) => ({ ...turn, error: message }));
         }
       } finally {
-        if (!controller.signal.aborted) setRunning(false);
+        // An aborted run was superseded or stopped; stop() already cleared its running flag.
+        if (!controller.signal.aborted) updateTurn(id, (turn) => ({ ...turn, running: false }));
       }
-    })();
+    },
+    [updateTurn],
+  );
+
+  useEffect(() => {
+    if (!initialQuery) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    void runTurn(1, initialQuery, initialModel, initialEffort, controller);
     return () => controller.abort();
-  }, [initialQuery, initialModel, initialEffort]);
+  }, [initialQuery, initialModel, initialEffort, runTurn]);
+
+  const busy = turns.some((turn) => turn.running);
+  const atLimit = turns.length >= MAX_CONVERSATION_TURNS;
+
+  useEffect(() => {
+    // Keep the newest follow-up in view; skip the initial load so the page doesn't jump.
+    if (turns.length > 1) endRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [turns.length]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const q = draft.trim();
-    if (!q) return;
-    const params = new URLSearchParams({ q });
-    if (selectedModel) params.set("model", selectedModel);
-    // While the list is still loading nothing can be validated yet, so keep whatever was chosen/carried in the URL.
-    const effort = modelsLoading ? selectedEffort : effectiveEffort;
-    if (effort) params.set("effort", effort);
-    router.push(`/ask?${params.toString()}`);
+    const prompt = draft.trim();
+    if (!prompt || busy || atLimit) return;
+    setDraft("");
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const id = ++nextTurnId.current;
+    setTurns((current) => [
+      ...current,
+      { id, prompt, answer: "", tools: [], usedModel: null, usedEffort: null, error: null, running: true },
+    ]);
+    // While the list is still loading nothing can be validated yet, so keep whatever was chosen.
+    void runTurn(id, prompt, selectedModel, modelsLoading ? selectedEffort : effectiveEffort, controller);
   }
 
-  const usedModelName = usedModel ? availableModels.find((m) => m.value === usedModel || m.resolvedModel === usedModel)?.displayName ?? usedModel : null;
+  function stop() {
+    abortRef.current?.abort();
+    setTurns((current) => current.map((turn) => (turn.running ? { ...turn, running: false } : turn)));
+  }
 
-  return (
+  function newConversation() {
+    abortRef.current?.abort();
+    sessionIdRef.current = null;
+    nextTurnId.current = 0;
+    setTurns([]);
+    setDraft("");
+    if (initialQuery) router.push("/ask");
+  }
+
+  function modelName(used: string | null) {
+    if (!used) return null;
+    return availableModels.find((m) => m.value === used || m.resolvedModel === used)?.displayName ?? used;
+  }
+
+  const composer = (
     <>
       <form className="ask-box" onSubmit={submit}>
         <textarea
@@ -188,10 +252,15 @@ export function AskConversation({
               e.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder="What should I follow up on?"
-          aria-label="Question"
+          placeholder={turns.length ? "Ask a follow-up…" : "What should I follow up on?"}
+          aria-label={turns.length ? "Follow-up question" : "Question"}
+          disabled={atLimit}
         />
-        <button type="submit" disabled={running}>Ask <span>↗</span></button>
+        {busy ? (
+          <button type="button" onClick={stop}>Stop</button>
+        ) : (
+          <button type="submit" disabled={atLimit}>Ask <span>↗</span></button>
+        )}
       </form>
       <div className="ask-options">
         <label>
@@ -222,44 +291,65 @@ export function AskConversation({
             {modelsError} <button type="button" className="ask-options-retry" onClick={retryModels}>Retry</button>
           </span>
         )}
+        {turns.length > 0 && (
+          <button type="button" className="ask-options-retry" onClick={newConversation}>New conversation</button>
+        )}
       </div>
-      <div className="prompt-row">
-        {prompts.map((prompt) => (
-          <a key={prompt} href={`/ask?q=${encodeURIComponent(prompt)}`}>{prompt}</a>
-        ))}
-      </div>
-      {initialQuery && (
-        <section className="answer">
-          <p className="eyebrow">Answer / cites record IDs, read-only</p>
-          <h2>{initialQuery}</h2>
-          {usedModelName && (
-            <p className="ask-meta">
-              Answered with {usedModelName}
-              {usedEffort ? ` · ${usedEffort} effort` : ""}
-            </p>
-          )}
-          {tools.length > 0 && (
-            <details className="tool-trace">
-              <summary>Tool activity ({tools.length})</summary>
-              <ol>
-                {tools.map((tool, index) => (
-                  <li key={index}><b>{tool.name}</b> <code>{JSON.stringify(tool.input)}</code></li>
-                ))}
-              </ol>
-            </details>
-          )}
-          {answer ? (
-            <div className="answer-text">
-              {answer.split("\n").map((line, index) => (
-                <Fragment key={index}>{withCitations(line)}<br /></Fragment>
-              ))}
-            </div>
-          ) : running ? (
-            <p>Searching the brain…</p>
-          ) : null}
-          {error && <p className="ask-error" role="alert">{error}</p>}
-        </section>
+      {atLimit && (
+        <p className="ask-error">
+          This conversation reached {MAX_CONVERSATION_TURNS} questions. Start a new conversation to continue.
+        </p>
       )}
+    </>
+  );
+
+  return (
+    <>
+      {turns.length === 0 && composer}
+      {turns.length === 0 && (
+        <div className="prompt-row">
+          {prompts.map((prompt) => (
+            <a key={prompt} href={`/ask?q=${encodeURIComponent(prompt)}`}>{prompt}</a>
+          ))}
+        </div>
+      )}
+      {turns.map((turn) => {
+        const usedModelName = modelName(turn.usedModel);
+        return (
+          <section key={turn.id} className="answer turn">
+            <p className="eyebrow">Answer / cites record IDs, read-only</p>
+            <h2>{turn.prompt}</h2>
+            {usedModelName && (
+              <p className="ask-meta">
+                Answered with {usedModelName}
+                {turn.usedEffort ? ` · ${turn.usedEffort} effort` : ""}
+              </p>
+            )}
+            {turn.tools.length > 0 && (
+              <details className="tool-trace">
+                <summary>Tool activity ({turn.tools.length})</summary>
+                <ol>
+                  {turn.tools.map((tool, index) => (
+                    <li key={index}><b>{tool.name}</b> <code>{JSON.stringify(tool.input)}</code></li>
+                  ))}
+                </ol>
+              </details>
+            )}
+            {turn.answer ? (
+              <div className="answer-text">
+                {turn.answer.split("\n").map((line, index) => (
+                  <Fragment key={index}>{withCitations(line)}<br /></Fragment>
+                ))}
+              </div>
+            ) : turn.running ? (
+              <p>Searching the brain…</p>
+            ) : null}
+            {turn.error && <p className="ask-error" role="alert">{turn.error}</p>}
+          </section>
+        );
+      })}
+      {turns.length > 0 && <div className="turn-composer">{composer}</div>}
+      <div ref={endRef} />
     </>
   );
 }
