@@ -171,7 +171,11 @@ The domain boundary is in `src/lib/domain.ts`; defensive loading and normalizati
 
 ## Routes
 
-`/dashboard`, `/meetings`, `/meetings/[id]`, `/items`, `/actions`, `/questions`, `/decisions`, `/topics`, `/topics/[id]`, `/review`, `/briefing`, `/ask`, `/growth`, `/growth/impact`, and `/growth/career`.
+`/dashboard`, `/meetings`, `/meetings/[id]`, `/items`, `/actions`, `/questions`, `/decisions`, `/topics`, `/topics/[id]`, `/review`, `/briefing`, `/graph`, `/ask`, `/growth`, `/growth/impact`, and `/growth/career`.
+
+## Graph view
+
+`/graph` renders items as a force-directed graph. Hovering an item shows its full description; clicking it opens a side panel with its type, confidence, owner, topic, priority and a link to the source meeting. Clicking a topic node re-centers the graph on that topic. (Changelog: fixed item nodes not responding to hover/click because the custom pointer-area painter only covered topic nodes.)
 
 ## Ask page
 

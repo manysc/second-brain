@@ -253,9 +253,16 @@ export function GraphView({ data }: { data: GraphData }) {
           linkWidth={(link) => (link.kind === "topic-related" ? 1 + 2 * link.weight : link.kind === "related" ? 1.6 : 1)}
           nodeCanvasObjectMode={(node) => (isTopicNode(node) ? "replace" : "after")}
           nodePointerAreaPaint={(node, color, ctx) => {
-            if (!isTopicNode(node) || node.x === undefined || node.y === undefined) return;
+            if (node.x === undefined || node.y === undefined) return;
             ctx.fillStyle = color;
-            ctx.fillRect(node.x - TOPIC_NODE_HALF, node.y - TOPIC_NODE_HALF, TOPIC_NODE_HALF * 2, TOPIC_NODE_HALF * 2);
+            if (isTopicNode(node)) {
+              ctx.fillRect(node.x - TOPIC_NODE_HALF, node.y - TOPIC_NODE_HALF, TOPIC_NODE_HALF * 2, TOPIC_NODE_HALF * 2);
+              return;
+            }
+            // overriding this prop replaces the library's default hit area, so item circles must be painted here too
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, Math.sqrt(itemVal(node.id)) * NODE_REL_SIZE + 2, 0, 2 * Math.PI);
+            ctx.fill();
           }}
           nodeCanvasObject={(node, ctx, globalScale) => {
             if (node.x === undefined || node.y === undefined) return;
