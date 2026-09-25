@@ -136,7 +136,12 @@ Every result marks where information came from: `retrieved` (stored fact), `gene
 - Session safety: the SDK resolves a session id across all projects, so a client-supplied id could otherwise resume (and append
   to) an unrelated Claude Code session. The route therefore only accepts ids it issued itself, recorded as marker files in
   `<tmpdir>/second-brain-ask/issued/`, and answers anything else with HTTP 410. Ask transcripts live under that directory's project.
-- The transcript is client state only: a page reload restarts from the `?q=` prompt, and old session files stay in the temp directory until the OS clears it.
+- Session history: the page lists past conversations from `GET /api/ask/sessions` (Agent SDK `listSessions` scoped to the Ask
+  directory, filtered to issued ids). Opening one calls `GET /api/ask/sessions/{id}`, which rebuilds the turns from the SDK
+  transcript (`getSessionMessages`) so you can keep asking follow-ups; `DELETE` removes the transcript and its marker. Reads and
+  deletes apply the same issued-id check, so real Claude Code sessions are reported as 404. The reasoning effort of a past
+  turn is not stored in the transcript and is not shown when reopened.
+- History lives in the OS temp directory (`<tmpdir>/second-brain-ask`), so it is per machine and disappears when the OS clears it.
 
 ## Security and privacy
 

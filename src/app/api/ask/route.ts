@@ -1,13 +1,12 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { EffortLevel } from "@anthropic-ai/claude-agent-sdk";
+import { ISSUED_DIR, MCP_SERVER as SERVER, SESSION_CWD, SESSION_ID, isIssued, issuedMarker } from "@/lib/ask-sessions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SERVER = "brain-assistant";
 const READ_TOOLS = [
   "brain_health",
   "brain_search_items",
@@ -24,13 +23,6 @@ const MAX_PROMPT_CHARS = 2000;
 const MAX_MODEL_CHARS = 100;
 const MAX_TURNS = 12;
 const TIMEOUT_MS = 120_000;
-const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Ask conversations run from their own working directory so their transcripts stay out of the repo's Claude Code
-// session list. That does NOT stop a client from resuming other sessions: the SDK resolves a session id across all
-// projects (and appends to that transcript). So only ids this route issued are accepted: each one gets a marker file
-// under SESSION_CWD, and a resume without a marker is refused before the SDK is ever called.
-const SESSION_CWD = path.join(os.tmpdir(), "second-brain-ask");
-const ISSUED_DIR = path.join(SESSION_CWD, "issued");
 const EFFORT_LEVELS = new Set<EffortLevel>(["low", "medium", "high", "xhigh", "max"]);
 
 function parseModel(value: unknown): string | undefined {
@@ -84,7 +76,7 @@ export async function POST(request: Request) {
   }
 
   mkdirSync(ISSUED_DIR, { recursive: true });
-  if (sessionId && !existsSync(path.join(ISSUED_DIR, sessionId))) {
+  if (sessionId && !isIssued(sessionId)) {
     return Response.json({ error: "This conversation has expired. Start a new conversation." }, { status: 410 });
   }
 
@@ -132,7 +124,7 @@ export async function POST(request: Request) {
 
         for await (const message of run) {
           if (message.type === "system" && message.subtype === "init") {
-            writeFileSync(path.join(ISSUED_DIR, message.session_id), "");
+            writeFileSync(issuedMarker(message.session_id), "");
             send({ type: "meta", model: message.model, effort: message.effort ?? null, sessionId: message.session_id });
           } else if (message.type === "stream_event") {
             const event = message.event;

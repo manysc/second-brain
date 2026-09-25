@@ -4,18 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { EffortLevel, ModelInfo } from "@anthropic-ai/claude-agent-sdk";
+import type { SessionSummary, Turn } from "@/lib/ask-sessions";
 
-type ToolCall = { name: string; input: unknown };
-type Turn = {
-  id: number;
-  prompt: string;
-  answer: string;
-  tools: ToolCall[];
-  usedModel: string | null;
-  usedEffort: string | null;
-  error: string | null;
-  running: boolean;
-};
 type AskEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; input: unknown }
@@ -33,6 +23,15 @@ function effortLevelsFor(model: ModelInfo | undefined, allModels: ModelInfo[]): 
   const defaultEntry = allModels.find((m) => m.value === "default");
   if (defaultEntry) return defaultEntry.supportedEffortLevels ?? [];
   return Array.from(new Set(allModels.flatMap((m) => m.supportedEffortLevels ?? [])));
+}
+
+function timeAgo(timestamp: number): string {
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return new Date(timestamp).toLocaleDateString();
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -89,6 +88,13 @@ export function AskConversation({
   const sessionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  // History of past conversations, kept server-side by the Agent SDK (see /api/ask/sessions).
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const openRequest = useRef(0);
 
   // null = the model list hasn't loaded yet (listing models spawns the CLI, which can take many seconds).
   const [models, setModels] = useState<ModelInfo[] | null>(null);
@@ -171,6 +177,7 @@ export function AskConversation({
               updateTurn(id, (turn) => ({ ...turn, tools: [...turn.tools, { name: event.name, input: event.input }] }));
             } else if (event.type === "meta") {
               sessionIdRef.current = event.sessionId;
+              setActiveSessionId(event.sessionId);
               updateTurn(id, (turn) => ({ ...turn, usedModel: event.model, usedEffort: event.effort }));
             } else if (event.type === "error") updateTurn(id, (turn) => ({ ...turn, error: event.message }));
           }
@@ -198,6 +205,30 @@ export function AskConversation({
 
   const busy = turns.some((turn) => turn.running);
   const atLimit = turns.length >= MAX_CONVERSATION_TURNS;
+
+  const refreshSessions = useCallback(() => setHistoryVersion((version) => version + 1), []);
+
+  // Runs on mount, on refreshSessions(), and whenever a turn finishes (busy -> idle), so a new conversation shows up once saved.
+  useEffect(() => {
+    if (busy) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/ask/sessions");
+        if (!response.ok) throw new Error(`History failed (${response.status}).`);
+        const body = (await response.json()) as { sessions: SessionSummary[] };
+        if (!cancelled) {
+          setSessions(body.sessions);
+          setHistoryError(null);
+        }
+      } catch {
+        if (!cancelled) setHistoryError("History unavailable.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [busy, historyVersion]);
 
   useEffect(() => {
     // Keep the newest follow-up in view; skip the initial load so the page doesn't jump.
@@ -227,11 +258,50 @@ export function AskConversation({
 
   function newConversation() {
     abortRef.current?.abort();
+    openRequest.current++;
     sessionIdRef.current = null;
+    setActiveSessionId(null);
     nextTurnId.current = 0;
     setTurns([]);
     setDraft("");
     if (initialQuery) router.push("/ask");
+  }
+
+  async function openSession(sessionId: string) {
+    if (sessionId === activeSessionId && turns.length > 0) return;
+    abortRef.current?.abort();
+    const request = ++openRequest.current;
+    setHistoryError(null);
+    try {
+      const response = await fetch(`/api/ask/sessions/${encodeURIComponent(sessionId)}`);
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `Could not open conversation (${response.status}).`);
+      }
+      const body = (await response.json()) as { turns: Turn[] };
+      if (request !== openRequest.current) return; // a newer open / new conversation superseded this one
+      sessionIdRef.current = sessionId;
+      setActiveSessionId(sessionId);
+      nextTurnId.current = body.turns.length;
+      setTurns(body.turns);
+      setDraft("");
+    } catch (caught) {
+      if (request !== openRequest.current) return;
+      setHistoryError(caught instanceof Error ? caught.message : "Could not open conversation.");
+      refreshSessions();
+    }
+  }
+
+  async function removeSession(sessionId: string) {
+    try {
+      const response = await fetch(`/api/ask/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+      if (!response.ok && response.status !== 404) throw new Error(`Delete failed (${response.status}).`);
+      if (sessionId === activeSessionId) newConversation();
+      setHistoryError(null);
+    } catch (caught) {
+      setHistoryError(caught instanceof Error ? caught.message : "Delete failed.");
+    }
+    refreshSessions();
   }
 
   function modelName(used: string | null) {
@@ -303,6 +373,38 @@ export function AskConversation({
     </>
   );
 
+  const history =
+    sessions.length > 0 || historyError ? (
+      <details className="ask-history" open={turns.length === 0}>
+        <summary>History ({sessions.length})</summary>
+        {historyError && <p className="ask-error" role="alert">{historyError}</p>}
+        <ul>
+          {sessions.map((session) => (
+            <li key={session.sessionId} className={session.sessionId === activeSessionId ? "active" : undefined}>
+              <button
+                type="button"
+                className="ask-history-open"
+                onClick={() => void openSession(session.sessionId)}
+                title={session.title}
+              >
+                <span className="ask-history-title">{session.title}</span>
+                <span className="ask-history-time">{timeAgo(session.lastModified)}</span>
+              </button>
+              <button
+                type="button"
+                className="ask-history-delete"
+                onClick={() => void removeSession(session.sessionId)}
+                aria-label={`Delete conversation: ${session.title}`}
+                title="Delete"
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      </details>
+    ) : null;
+
   return (
     <>
       {turns.length === 0 && composer}
@@ -313,6 +415,7 @@ export function AskConversation({
           ))}
         </div>
       )}
+      {turns.length === 0 && history}
       {turns.map((turn) => {
         const usedModelName = modelName(turn.usedModel);
         return (
@@ -349,6 +452,7 @@ export function AskConversation({
         );
       })}
       {turns.length > 0 && <div className="turn-composer">{composer}</div>}
+      {turns.length > 0 && history}
       <div ref={endRef} />
     </>
   );
