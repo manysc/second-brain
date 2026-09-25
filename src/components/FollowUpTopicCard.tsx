@@ -18,24 +18,27 @@ export function FollowUpTopicCard({ topic }: { topic: FollowUpTopic }) {
         <Link href={`/topics/${encodeURIComponent(topic.topic.id)}`}>{topic.topic.name}</Link>
       </h2>
       {whyNow ? <p>{whyNow}</p> : null}
-      <div className="card-grid">
-        {topic.followUpItems.map((item) => (
-          <KnowledgeCard key={item.id} item={item} />
-        ))}
-      </div>
-      {topic.relatedFromOtherTopics.length ? (
-        <div className="follow-up-related">
-          <p className="eyebrow">Related in other topics</p>
-          {topic.relatedFromOtherTopics.map((related) => (
-            <div key={related.item.id}>
-              <Link href={`/topics/${encodeURIComponent(related.topicId)}`} className="evidence-link">
-                {related.topicName}
-              </Link>
-              <p>{related.item.description}</p>
-            </div>
+      <details className="follow-up-body">
+        <summary>Follow-up items ({topic.followUpItems.length})</summary>
+        <div className="card-grid">
+          {topic.followUpItems.map((item) => (
+            <KnowledgeCard key={item.id} item={item} />
           ))}
         </div>
-      ) : null}
+        {topic.relatedFromOtherTopics.length ? (
+          <div className="follow-up-related">
+            <p className="eyebrow">Related in other topics</p>
+            {topic.relatedFromOtherTopics.map((related) => (
+              <div key={related.item.id}>
+                <Link href={`/topics/${encodeURIComponent(related.topicId)}`} className="evidence-link">
+                  {related.topicName}
+                </Link>
+                <p>{related.item.description}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </details>
     </section>
   );
 }
