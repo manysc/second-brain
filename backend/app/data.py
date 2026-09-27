@@ -10,7 +10,7 @@ import numpy as np
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
-from app import db, embeddings, s3_store, topic_priority
+from app import db, embeddings, s3_store, topic_priority, topic_suggestions
 from app.db_models import (
     KnowledgeItemRow,
     MeetingRow,
@@ -44,6 +44,7 @@ from app.models import (
     ReviewStatus,
     SemanticContribution,
     Topic,
+    TopicCandidate,
     TopicLink,
     TopicMergeSuggestion,
     TopicPriorityHistoryEntry,
@@ -62,9 +63,10 @@ UNCATEGORIZED_TOPIC = "Uncategorized"
 MANUAL_MEETING_ID = "manual"
 
 # cosine similarity between an item and a topic's centroid at/above which the item is filed under that
-# existing topic (ingestion) or suggested for it (suggested_item_topics)
+# existing topic with no human in the loop (ingestion, review accept without a topic). Suggestions a
+# human confirms use the looser hybrid ranking in app/topic_suggestions.py instead.
 ITEM_TOPIC_MATCH_SIMILARITY = 0.6
-# looser bar for merely hinting an existing topic on a new-topic proposal
+# looser bar for listing a topic as related to another
 PROPOSAL_HINT_SIMILARITY = 0.4
 
 # cosine distance (embeddings are normalized, so 0=identical..~2=opposite) below which an
@@ -263,19 +265,52 @@ def _matching_topic_centroids(session: Session) -> dict[str, np.ndarray]:
     return _topic_centroids(rows)
 
 
+def _topic_ranker(rows: list[TopicRow]) -> topic_suggestions.TopicRanker:
+    """Ranker over every topic except "Uncategorized" (a catch-all whose items aren't a topic signal).
+    `rows` must have `items` loaded."""
+    return topic_suggestions.TopicRanker(
+        [
+            topic_suggestions.TopicProfile(
+                topic_id=row.id,
+                name=row.name,
+                tags=list(row.tags or []),
+                item_embeddings=[item.embedding for item in row.items if item.embedding is not None],
+                item_descriptions=[item.description for item in row.items],
+            )
+            for row in rows
+            if row.name != UNCATEGORIZED_TOPIC
+        ]
+    )
+
+
+def _load_topic_ranker(session: Session) -> topic_suggestions.TopicRanker:
+    rows = session.execute(select(TopicRow).options(selectinload(TopicRow.items))).scalars().all()
+    return _topic_ranker(list(rows))
+
+
+def _confident_topic_id(ranked: list[topic_suggestions.RankedTopic]) -> str | None:
+    """The top-ranked topic when it's at least a MEDIUM-confidence match - used to pre-fill a choice
+    a human still confirms, never to file anything automatically."""
+    if not ranked or topic_suggestions.confidence_band(ranked[0].score) == "LOW":
+        return None
+    return ranked[0].topic_id
+
+
 def with_suggested_topics(candidates: list[ReviewCandidate]) -> list[ReviewCandidate]:
-    """Fills `suggested_topic_id` (closest existing topic, if similar enough) on each candidate - the
-    same match set_review_status applies when a candidate is accepted without an explicit topic."""
+    """Fills `suggested_topic_id` (the best-ranked existing topic, when a confident match) on each
+    candidate to pre-select the review page's topic picker. Deliberately looser than the strict
+    centroid match set_review_status applies when a candidate is accepted without an explicit topic,
+    since a human confirms this one."""
     if not candidates:
         return candidates
-    vectors = embeddings.embed_texts([candidate.description for candidate in candidates])
+    descriptions = [candidate.description for candidate in candidates]
+    vectors = embeddings.embed_texts(descriptions)
     with db.get_session() as session:
-        centroids = _matching_topic_centroids(session)
+        ranker = _load_topic_ranker(session)
+    ranked = ranker.rank_many(vectors, descriptions, top_n=1)
     return [
-        candidate.model_copy(
-            update={"suggested_topic_id": _closest_topic(np.array(vector), centroids, ITEM_TOPIC_MATCH_SIMILARITY)[0]}
-        )
-        for candidate, vector in zip(candidates, vectors)
+        candidate.model_copy(update={"suggested_topic_id": _confident_topic_id(best)})
+        for candidate, best in zip(candidates, ranked)
     ]
 
 
@@ -1146,47 +1181,53 @@ def related_topics(
     return related[:limit]
 
 
-def suggested_item_topics(min_similarity: float = ITEM_TOPIC_MATCH_SIMILARITY, limit: int = 20) -> list[ItemTopicSuggestion]:
+def suggested_item_topics(
+    min_score: float = 0.0, limit: int | None = None, candidates: int = topic_suggestions.DEFAULT_CANDIDATES
+) -> list[ItemTopicSuggestion]:
     """Per-item counterpart to suggested_topic_merges: for each item still sitting in
-    "Uncategorized", flags the existing topic whose items are semantically closest on average,
-    for a human to review and confirm via the normal move-item flow - never assigns automatically."""
+    "Uncategorized", ranks the existing topics it most likely belongs to (best first, with a
+    confidence band), for a human to review and confirm via the normal move-item flow - never
+    assigns automatically."""
     with db.get_session() as session:
         stmt = select(TopicRow).options(selectinload(TopicRow.items))
-        rows = session.execute(stmt).scalars().all()
-        uncategorized = next((row for row in rows if row.name == "Uncategorized"), None)
+        rows = list(session.execute(stmt).scalars().all())
+        uncategorized = next((row for row in rows if row.name == UNCATEGORIZED_TOPIC), None)
         if uncategorized is None or not uncategorized.items:
             return []
-        other_rows = [row for row in rows if row.name != "Uncategorized"]
-        topics_by_id = {row.id: _topic_from_row(row) for row in other_rows}
-        centroids = _topic_centroids(other_rows)
-        uncategorized_items = [
-            (_item_from_row(item_row), np.array(item_row.embedding))
-            for item_row in uncategorized.items
-            if item_row.embedding is not None
-        ]
+        ranker = _topic_ranker(rows)
+        names = {row.id: (row.name, len(row.items)) for row in rows}
+        embedded = [item_row for item_row in uncategorized.items if item_row.embedding is not None]
+        items = [_item_from_row(item_row) for item_row in embedded]
+        ranked = ranker.rank_many(
+            [item_row.embedding for item_row in embedded], [item_row.description for item_row in embedded], candidates
+        )
 
-    suggestions: list[ItemTopicSuggestion] = []
-    for item, vector in uncategorized_items:
-        best_topic_id: str | None = None
-        best_similarity = -1.0
-        for topic_id, centroid in centroids.items():
-            similarity = float(np.dot(vector, centroid) / (np.linalg.norm(vector) * np.linalg.norm(centroid)))
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_topic_id = topic_id
-        if best_topic_id is not None and best_similarity >= min_similarity:
-            suggestions.append(
-                ItemTopicSuggestion(
-                    item=item, suggested_topic=topics_by_id[best_topic_id], similarity=best_similarity
+    suggestions = [
+        ItemTopicSuggestion(
+            item=item,
+            candidates=[
+                TopicCandidate(
+                    topic_id=r.topic_id,
+                    topic_name=names[r.topic_id][0],
+                    item_count=names[r.topic_id][1],
+                    score=r.score,
+                    centroid_similarity=r.centroid_similarity,
                 )
-            )
-    suggestions.sort(key=lambda s: s.similarity, reverse=True)
-    return suggestions[:limit]
+                for r in best
+            ],
+            score=best[0].score,
+            confidence=topic_suggestions.confidence_band(best[0].score),
+        )
+        for item, best in zip(items, ranked)
+        if best and best[0].score >= min_score
+    ]
+    suggestions.sort(key=lambda s: s.score, reverse=True)
+    return suggestions if limit is None else suggestions[:limit]
 
 
-def topic_proposals(min_hint_similarity: float = PROPOSAL_HINT_SIMILARITY) -> list[TopicProposal]:
+def topic_proposals() -> list[TopicProposal]:
     """Groups items awaiting a topic decision by the new-topic name the extractor proposed. Each
-    proposal also carries the closest existing topic (when reasonably similar) as a hint for the
+    proposal also carries the best-ranked existing topic (when a confident match) as a hint for the
     reviewer's "use existing topic" override."""
     with db.get_session() as session:
         item_rows = session.execute(
@@ -1197,19 +1238,15 @@ def topic_proposals(min_hint_similarity: float = PROPOSAL_HINT_SIMILARITY) -> li
         ).scalars().all()
         if not item_rows:
             return []
-        topic_rows = [
-            row
-            for row in session.execute(select(TopicRow).options(selectinload(TopicRow.items))).scalars().all()
-            if row.name != UNCATEGORIZED_TOPIC
-        ]
-        centroids = _topic_centroids(topic_rows)
+        ranker = _load_topic_ranker(session)
         grouped: dict[str, list[KnowledgeItemRow]] = {}
         for row in item_rows:
             grouped.setdefault(row.suggested_topic, []).append(row)
         proposals: list[TopicProposal] = []
         for name, rows in grouped.items():
             vectors = [np.array(row.embedding) for row in rows if row.embedding is not None]
-            hint = _closest_topic(np.mean(vectors, axis=0), centroids, min_hint_similarity)[0] if vectors else None
+            text = " ".join([name, *(row.description for row in rows)])
+            hint = _confident_topic_id(ranker.rank(np.mean(vectors, axis=0), text, top_n=1)) if vectors else None
             proposals.append(
                 TopicProposal(
                     name=name,

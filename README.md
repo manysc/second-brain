@@ -188,6 +188,34 @@ The domain boundary is in `src/lib/domain.ts`; defensive loading and normalizati
 
 `/graph` renders items as a force-directed graph. Hovering an item shows its full description; clicking it opens a side panel with its type, confidence, owner, topic, priority and a link to the source meeting. Clicking a topic node re-centers the graph on that topic. (Changelog: fixed item nodes not responding to hover/click because the custom pointer-area painter only covered topic nodes.)
 
+## Topic suggestions
+
+`backend/app/topic_suggestions.py` ranks existing topics for items that don't have one yet. It mixes four signals:
+
+- cosine similarity to each topic's mean item embedding
+- a vote among the item's 10 nearest categorized items
+- matches on distinctive topic-name and tag tokens (tokens shared by 3+ topic names, like "strategy", are ignored)
+- when no topic is a close embedding match (best centroid < 0.6), TF-IDF overlap with the descriptions of the topic's items
+
+The ranker is DB-free and is tested in `backend/tests/test_topic_suggestions.py`. Scores map to HIGH (≥ 0.60), MEDIUM (≥ 0.50) or LOW confidence bands.
+
+In a leave-one-out test on the categorized items, it ranked the correct topic first ~67% of the time and in the top 3 ~85% of the time. The previous centroid-only match scored 62% / 80%. The top pick was right ~91% of the time in the HIGH band, ~84% in MEDIUM and ~50% in LOW. Larger embedding models (bge-base/large, gte-base) scored within ~1 point of all-MiniLM-L6-v2, so the model was kept.
+
+It powers:
+
+- **Uncategorized topic page** (`GET /api/topics/suggested-item-topics`, `SuggestedItemTopics`): every Uncategorized item gets its top 3 candidate topics.
+  - Items are grouped under their best match, with groups holding the most HIGH-confidence items first.
+  - HIGH items are pre-selected, and "Move N selected to …" confirms a whole group.
+  - The 2nd and 3rd candidates are one-click alternatives, and an "Other topic…" picker moves an item anywhere else.
+  - Nothing moves without a click.
+- **Review Center** (`/review`): the topic picker for a pending candidate, and the "use existing topic" hint on new-topic proposals, are pre-selected with the top-ranked topic when it's at least MEDIUM confidence.
+
+Filing without a human in the loop is unchanged: ingestion auto-filing, and accepting a review candidate via the API without a topic. Both still require a ≥ 0.6 centroid match.
+
+(Changelog: replaced the single-centroid, ≥ 0.6, top-20 suggestion list, which surfaced 6 of 346 Uncategorized items, with ranked top-3 candidates for every item, a confidence band and grouped bulk confirmation. The Review Center pre-selection now uses the same ranker.)
+
+(Changelog: moves from the suggestions panel are now optimistic. Moved rows disappear immediately and reappear with an error banner if the move fails, instead of waiting for a full page re-render. The panel mounts a single "Other topic…" picker on demand instead of one per row and receives only the fields it displays. The Uncategorized page renders the first 25 item cards per column, with a "Show more" link (`?limit=`); other topics are unchanged. This took the page from ~12.5 MB / ~12s to ~4.4 MB / ~4s in dev.)
+
 ## Ask page
 
 `/ask` (`src/app/api/ask/route.ts`) calls `@anthropic-ai/claude-agent-sdk`'s `query()` with no auth option set, so it authenticates with whatever credential the Agent SDK finds in the environment. With no `ANTHROPIC_API_KEY` set, it falls back to the logged-in Claude Code / VS Code extension session (`~/.claude/.credentials.json`) — that is, your Claude Pro OAuth session, not a raw Anthropic API key. That means data-sharing settings for these requests are governed by that account's own "Help improve Claude" setting (claude.ai/settings/data-privacy-controls), not by anything in this app.

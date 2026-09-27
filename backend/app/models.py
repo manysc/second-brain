@@ -329,10 +329,21 @@ class TopicProposalReject(CamelModel):
     suggested_name: str = Field(alias="suggestedName")
 
 
+class TopicCandidate(CamelModel):
+    """A lightweight reference to an existing topic ranked for an item (see app/topic_suggestions.py)."""
+    topic_id: str = Field(alias="topicId")
+    topic_name: str = Field(alias="topicName")
+    item_count: int = Field(alias="itemCount")
+    score: float
+    centroid_similarity: float = Field(alias="centroidSimilarity")
+
+
 class ItemTopicSuggestion(CamelModel):
     item: KnowledgeItem
-    suggested_topic: Topic = Field(alias="suggestedTopic")
-    similarity: float
+    # best first, up to 3
+    candidates: list[TopicCandidate]
+    score: float
+    confidence: Confidence
 
 
 class Meeting(CamelModel):

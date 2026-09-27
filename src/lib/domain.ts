@@ -174,10 +174,31 @@ export type TopicProposal = {
   suggestedExistingTopicId: string | null;
 };
 
+export type TopicCandidate = {
+  topicId: string;
+  topicName: string;
+  itemCount: number;
+  score: number;
+  centroidSimilarity: number;
+};
+
 export type ItemTopicSuggestion = {
   item: KnowledgeItem;
-  suggestedTopic: Topic;
-  similarity: number;
+  // best first, up to 3
+  candidates: TopicCandidate[];
+  score: number;
+  confidence: Confidence;
+};
+
+// What the suggestions panel needs of an ItemTopicSuggestion - the full item (evidence, notes, ...)
+// would otherwise be serialized to the browser once per row.
+export type SuggestionRow = {
+  id: string;
+  description: string;
+  type: ItemType;
+  candidates: TopicCandidate[];
+  score: number;
+  confidence: Confidence;
 };
 
 export type GraphNode = {

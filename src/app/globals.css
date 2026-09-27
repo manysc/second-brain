@@ -42,3 +42,21 @@
 .knowledge-card > .topic-tags-list { margin:8px 0; }
 
 .topic-images-body { display:grid; gap:10px; margin-top:8px; } .topic-image-list { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; } .topic-image-list li { display:grid; gap:4px; align-content:start; } .topic-image-list img { display:block; width:100%; height:110px; object-fit:cover; border:1px solid var(--line); background:var(--panel); } .topic-image-list small { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .topic-image-list form { margin:0; } .image-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; } .image-form small { color:var(--muted); }
+.suggestion-summary { color:var(--muted); font-size:12px; line-height:1.6; margin:0 0 14px; max-width:780px; }
+.suggestion-group { background:var(--panel); border:1px solid var(--line); margin-bottom:10px; }
+.suggestion-group summary { cursor:pointer; padding:14px 18px; display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; font-size:13px; }
+.suggestion-group-meta { color:var(--muted); font-size:11px; }
+.suggestion-list { list-style:none; margin:0; padding:0 18px; }
+.suggestion-row { display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-top:1px solid var(--line); }
+.suggestion-row > input { margin-top:3px; }
+.suggestion-body { flex:1; min-width:0; }
+.suggestion-body p { margin:0 0 8px; font-size:13px; line-height:1.5; }
+.suggestion-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.suggestion-meta .candidate-chip { background:transparent; color:var(--ink); padding:4px 8px; font-size:11px; }
+.suggestion-meta select { border:1px solid var(--line); background:transparent; padding:4px 6px; font:600 11px 'DM Sans'; color:var(--ink); max-width:200px; }
+.suggestion-group-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px 18px; border-top:1px solid var(--line); font-size:12px; }
+.suggestion-group-actions label { display:inline-flex; align-items:center; gap:6px; color:var(--muted); }
+.suggestion-group-actions button { background:var(--ink); color:#fff; }
+.item-topic-suggestions button:disabled { opacity:.4; cursor:not-allowed; }
+.item-topic-suggestions .error-banner { margin:0 0 14px; }
+.show-more { color:var(--muted); font-size:12px; margin:10px 0 0; } .show-more a { text-decoration:underline; }

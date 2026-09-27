@@ -179,8 +179,8 @@ def get_suggested_topic_merges(
 
 # same path-ordering reason as suggested-merges above
 @app.get("/api/topics/suggested-item-topics", response_model=list[ItemTopicSuggestion])
-def get_suggested_item_topics() -> list[ItemTopicSuggestion]:
-    return data.suggested_item_topics()
+def get_suggested_item_topics(limit: int | None = Query(default=None, ge=1)) -> list[ItemTopicSuggestion]:
+    return data.suggested_item_topics(limit=limit)
 
 
 @app.get("/api/topics/{topic_id}", response_model=Topic)

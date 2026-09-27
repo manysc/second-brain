@@ -300,11 +300,17 @@ def test_suggested_item_topics_flags_similar_topic(db_ready):
     data.assign_item_topic(item_a.id, topic_a.id)
     data.assign_item_topic(item_b.id, uncategorized_id)
     try:
-        suggestions = data.suggested_item_topics(min_similarity=-1.0, limit=1000)
+        suggestions = data.suggested_item_topics()
         match = next((s for s in suggestions if s.item.id == item_b.id), None)
         assert match is not None
-        assert match.suggested_topic.id == topic_a.id
-        assert match.similarity == pytest.approx(1.0, abs=1e-4)
+        assert topic_a.id in [c.topic_id for c in match.candidates]
+        top = next(c for c in match.candidates if c.topic_id == topic_a.id)
+        assert top.topic_name == topic_a.name
+        assert top.item_count == 1
+        assert top.centroid_similarity == pytest.approx(1.0, abs=1e-4)
+        assert 1 <= len(match.candidates) <= 3
+        assert match.score == match.candidates[0].score
+        assert [c.score for c in match.candidates] == sorted((c.score for c in match.candidates), reverse=True)
     finally:
         data.assign_item_topic(item_a.id, original_a_topic)
         data.assign_item_topic(item_b.id, original_b_topic)
@@ -318,5 +324,8 @@ def test_suggested_item_topics_never_suggests_uncategorized(db_ready):
     meetings = data.load_meetings()
     if not data.all_items(meetings):
         pytest.skip("no seeded knowledge items available")
-    suggestions = data.suggested_item_topics(min_similarity=-1.0, limit=1000)
-    assert all(s.suggested_topic.name != "Uncategorized" for s in suggestions)
+    suggestions = data.suggested_item_topics()
+    uncategorized_ids = {t.id for t in data.all_topics() if t.name == "Uncategorized"}
+    assert all(c.topic_id not in uncategorized_ids for s in suggestions for c in s.candidates)
+    assert all(c.topic_name != "Uncategorized" for s in suggestions for c in s.candidates)
+    assert len(data.suggested_item_topics(limit=1)) <= 1

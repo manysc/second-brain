@@ -24,24 +24,37 @@ import {
   updateTopicAction,
   updateTopicNoteAction,
 } from "@/lib/actions";
-import type { KnowledgeItem } from "@/lib/domain";
+import type { KnowledgeItem, SuggestionRow } from "@/lib/domain";
+
+const DEFAULT_UNCATEGORIZED_LIMIT = 25;
+const SHOW_MORE_STEP = 50;
 
 export default async function TopicDetail({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; limit?: string }>;
 }) {
   const { id } = await params;
-  const [topic, topics, meetings, relatedTopics, error] = await Promise.all([
+  const { error, limit: rawLimit } = await searchParams;
+  const [topic, topics, meetings, relatedTopics] = await Promise.all([
     getTopicById(id),
     getTopics(),
     getMeetings(),
     getRelatedTopics(id),
-    (await searchParams).error,
   ]);
-  const suggestions = topic.name === "Uncategorized" ? await getSuggestedItemTopics() : [];
+  const suggestions: SuggestionRow[] =
+    topic.name === "Uncategorized"
+      ? (await getSuggestedItemTopics()).map(({ item, candidates, score, confidence }) => ({
+          id: item.id,
+          description: item.description,
+          type: item.type,
+          candidates,
+          score,
+          confidence,
+        }))
+      : [];
   const meetingDateById = new Map(meetings.map((m) => [m.id, m.date]));
   // Items only carry a meetingId, so recency is derived from the parent meeting's date.
   function sortByMeetingDateDesc(items: KnowledgeItem[]) {
@@ -58,6 +71,22 @@ export default async function TopicDetail({
   const decisions = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "DECISION"));
   const actions = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "ACTION"));
   const questions = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "QUESTION"));
+  // Uncategorized can hold hundreds of items; each card carries forms and a topic picker, so only the
+  // first `limit` per column are rendered (the suggestions panel above is the main way to triage them).
+  const isUncategorized = topic.name === "Uncategorized";
+  const parsedLimit = Number.parseInt(rawLimit ?? "", 10);
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : DEFAULT_UNCATEGORIZED_LIMIT;
+  function shown(items: KnowledgeItem[]) {
+    return isUncategorized ? items.slice(0, limit) : items;
+  }
+  function showMore(total: number) {
+    if (!isUncategorized || total <= limit) return null;
+    return (
+      <p className="show-more">
+        Showing {limit} of {total} · <Link href={`/topics/${topic.id}?limit=${limit + SHOW_MORE_STEP}`}>Show more</Link>
+      </p>
+    );
+  }
 
   return (
     <AppShell>
@@ -157,7 +186,16 @@ export default async function TopicDetail({
           deleteAction={deleteTopicImageAction}
         />
       </section>
-      {topic.name === "Uncategorized" ? <SuggestedItemTopics suggestions={suggestions} /> : null}
+      {topic.name === "Uncategorized" ? (
+        <SuggestedItemTopics
+          suggestions={suggestions}
+          topics={topics
+            .filter((t) => t.name !== "Uncategorized")
+            .map(({ id, name }) => ({ id, name }))
+            .sort((a, b) => a.name.localeCompare(b.name))}
+          returnTo={`/topics/${topic.id}`}
+        />
+      ) : null}
       <RelatedTopics topics={relatedTopics} />
       <section className="topic-situation">
         <p className="eyebrow">Current situation</p>
@@ -189,7 +227,7 @@ export default async function TopicDetail({
             </div>
             <AddItemForm topicId={topic.id} type="IDEA" label="idea" />
             {ideas.length ? (
-              ideas.map((i) => (
+              shown(ideas).map((i) => (
                 <SelectableItem key={i.id} id={i.id}>
                   <KnowledgeCard item={i} />
                   <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
@@ -199,6 +237,7 @@ export default async function TopicDetail({
             ) : (
               <p className="empty">No ideas recorded yet.</p>
             )}
+            {showMore(ideas.length)}
           </section>
           <section>
             <div className="section-heading">
@@ -209,7 +248,7 @@ export default async function TopicDetail({
             </div>
             <AddItemForm topicId={topic.id} type="QUESTION" label="question" />
             {questions.length ? (
-              questions.map((i) => (
+              shown(questions).map((i) => (
                 <SelectableItem key={i.id} id={i.id}>
                   <KnowledgeCard item={i} />
                   <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
@@ -219,6 +258,7 @@ export default async function TopicDetail({
             ) : (
               <p className="empty">No unresolved questions recorded.</p>
             )}
+            {showMore(questions.length)}
           </section>
           <section>
             <div className="section-heading">
@@ -229,7 +269,7 @@ export default async function TopicDetail({
             </div>
             <AddItemForm topicId={topic.id} type="DECISION" label="decision" />
             {decisions.length ? (
-              decisions.map((i) => (
+              shown(decisions).map((i) => (
                 <SelectableItem key={i.id} id={i.id}>
                   <KnowledgeCard item={i} />
                   <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
@@ -239,6 +279,7 @@ export default async function TopicDetail({
             ) : (
               <p className="empty">No decisions recorded.</p>
             )}
+            {showMore(decisions.length)}
           </section>
           <section>
             <div className="section-heading">
@@ -249,7 +290,7 @@ export default async function TopicDetail({
             </div>
             <AddItemForm topicId={topic.id} type="ACTION" label="action" />
             {actions.length ? (
-              actions.map((i) => (
+              shown(actions).map((i) => (
                 <SelectableItem key={i.id} id={i.id}>
                   <KnowledgeCard item={i} />
                   <TopicAssignmentForm item={i} topics={topics} currentTopicId={topic.id} />
@@ -259,6 +300,7 @@ export default async function TopicDetail({
             ) : (
               <p className="empty">No actions recorded.</p>
             )}
+            {showMore(actions.length)}
           </section>
         </div>
       </BulkMoveProvider>

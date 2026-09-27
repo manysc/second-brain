@@ -113,18 +113,29 @@ export async function moveItemsTopicAction(itemIds: string[], topicId: string | 
   redirect(returnTo);
 }
 
+// Like moveItemsTopicAction but returns instead of redirecting, so a client component can hide the
+// moved items optimistically instead of waiting for a full page re-render.
+export async function moveSuggestedItemsAction(
+  itemIds: string[],
+  topicId: string,
+  returnTo: string,
+): Promise<{ error?: string }> {
+  if (itemIds.length === 0) return {};
+
+  try {
+    await moveItemsTopic(itemIds, topicId);
+  } catch (err) {
+    return { error: errorMessage(err) };
+  }
+  revalidatePath("/topics");
+  revalidatePath(returnTo);
+  revalidatePath(`/topics/${topicId}`);
+  return {};
+}
+
 export async function mergeTopicsAction(sourceTopicId: string, targetTopicId: string): Promise<void> {
   try {
     await mergeTopics(sourceTopicId, targetTopicId);
-  } catch (err) {
-    redirect(`/topics?error=${encodeURIComponent(errorMessage(err))}`);
-  }
-  revalidatePath("/topics");
-}
-
-export async function assignItemTopicAction(itemId: string, topicId: string): Promise<void> {
-  try {
-    await moveItemTopic(itemId, topicId);
   } catch (err) {
     redirect(`/topics?error=${encodeURIComponent(errorMessage(err))}`);
   }
