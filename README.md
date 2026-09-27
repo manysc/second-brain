@@ -220,6 +220,22 @@ Filing without a human in the loop is unchanged: ingestion auto-filing, and acce
 
 `/ask` (`src/app/api/ask/route.ts`) calls `@anthropic-ai/claude-agent-sdk`'s `query()` with no auth option set, so it authenticates with whatever credential the Agent SDK finds in the environment. With no `ANTHROPIC_API_KEY` set, it falls back to the logged-in Claude Code / VS Code extension session (`~/.claude/.credentials.json`) — that is, your Claude Pro OAuth session, not a raw Anthropic API key. That means data-sharing settings for these requests are governed by that account's own "Help improve Claude" setting (claude.ai/settings/data-privacy-controls), not by anything in this app.
 
+## Other implemented features
+
+A few smaller features exist in the code and API but aren't covered elsewhere in this README:
+
+- **Tags** — free-text tags on both items and topics (`ItemTags` / `TopicTags` / `TagChip` components), added and removed via `POST`/`DELETE /api/items/{id}/tags` and `/api/topics/{id}/tags`. An item can hold at most a fixed number of tags; exceeding it is a `400`.
+- **Notes** — beyond appending a note, notes can be edited and deleted on both items and topics (`NotesSection`; `POST`/`PATCH`/`DELETE` on `/api/items/{id}/notes/{noteId}` and `/api/topics/{id}/notes/{noteId}`).
+- **Manual item and topic management** — `AddItemForm` and `EditItemForm` let a person create or edit a knowledge item directly from the UI (recorded as a manual entry, not sourced from a meeting extract). Topics can likewise be created, edited, and deleted outright (`POST`/`PATCH`/`DELETE /api/topics`), and a manually-added item can be deleted (`DELETE /api/items/{id}`).
+- **Independent status controls** — an item's or a topic's status can be changed directly (`PATCH /api/items/{id}/status`, `PATCH /api/topics/{id}/status`), separate from the priority-classification system.
+- **Item-level manual priority override** — `PATCH /api/items/{id}/priority-override` mirrors the topic priority override (see Automatic Topic Priority Classification) but scoped to a single item.
+- **Topic merge suggestions** — `GET /api/topics/suggested-merges` and the `SuggestedTopicMerges` component surface candidate topics worth merging, ahead of the `POST /api/topics/{id}/merge` call.
+- **Topic proposals from register-derived meetings** — `GET /api/review/topic-proposals`, `POST /api/review/topic-proposals/accept`, and `POST /api/review/topic-proposals/reject` (`TopicProposalCard`) let a reviewer turn a suggested new topic name into a real topic, or reject it — distinct from the regular per-candidate review flow in `/review`.
+- **Related topics** — `GET /api/topics/{id}/related` and the `RelatedTopics` component show topics connected to the one being viewed.
+- **Follow-up digest** — `GET /api/follow-up` (configurable `limit` and `dueSoonDays`) returns a digest of items needing follow-up; this is the data source behind `/briefing`.
+- **Free-text search** — `GET /api/search?q=` does keyword search across items and topics, separate from the embedding-based "similar items" feature described above.
+- **Ask page model picker** — `GET /api/ask/models` lists the models available to `/ask`, letting the user choose which one answers a question.
+
 ## Source mapping
 
 Ideas, decisions, actions, and questions become a common `KnowledgeItem`. Evidence retains speaker, quote, context, and nullable timestamp. `related_candidate_ids` are preserved as source relationships; the UI does not assign a stronger semantic edge than the source proves. Review candidates remain pending and are never automatically promoted. Qualitative confidence remains High, Medium, or Low.
