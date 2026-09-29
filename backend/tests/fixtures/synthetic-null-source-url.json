@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "meeting": {
+    "meeting_id": "synthetic-null-source-url",
+    "title": "Synthetic Meeting With No Source Link",
+    "date": "2026-09-23",
+    "source_url": null
+  },
+  "ideas": [
+    {
+      "candidate_id": "I-001",
+      "type": "Idea",
+      "description": "Idea 1: explore a self-serve Onboarding dashboard for customers.",
+      "theme": "Onboarding",
+      "status": "Open",
+      "confidence": "High",
+      "evidence": {
+        "speaker": "Alice",
+        "timestamp": "00:01:00",
+        "quote": "Idea 1: explore a self-serve Onboarding dashboard for customers.",
+        "context": "Synthetic test fixture"
+      },
+      "related_candidate_ids": []
+    }
+  ],
+  "decisions": [],
+  "actions": [],
+  "questions": [],
+  "review_candidates": []
+}

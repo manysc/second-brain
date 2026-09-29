@@ -444,7 +444,7 @@ class RawMeetingInfo(BaseModel):
     meeting_id: str
     title: str
     date: str
-    source_url: str
+    source_url: str | None = None
 
 
 class RawReviewCandidate(BaseModel):

@@ -134,6 +134,18 @@ def test_parse_meetings_from_s3_returns_single_meeting_for_non_bundle_files(s3_e
         assert meetings[0].id == ingest.parse_meeting_from_s3(keys[0]).id
 
 
+def test_parse_meetings_from_s3_defaults_null_source_url_to_the_filename(s3_env):
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "synthetic-null-source-url.json")
+
+        keys = s3_store.list_extract_keys()
+        meetings = ingest.parse_meetings_from_s3(keys[0])
+        assert len(meetings) == 1
+        assert meetings[0].source_url == "synthetic-null-source-url.json"
+
+
 def test_parse_meetings_from_s3_finds_bundle_entries_under_any_list_key(s3_env):
     """The extraction tool isn't stable about naming its bundle's list of per-meeting entries
     ("extractions" vs "meetings" seen in practice) or repeating schema_version on each entry, so

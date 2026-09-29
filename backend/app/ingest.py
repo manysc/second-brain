@@ -112,7 +112,7 @@ def _derive_meeting_identity(key: str) -> tuple[str, str]:
     return meeting_id, variant
 
 
-def _normalize_extraction(parsed: RawExtraction, meeting_id: str, variant: str) -> Meeting:
+def _normalize_extraction(parsed: RawExtraction, meeting_id: str, variant: str, key: str) -> Meeting:
     items = [
         *(_normalize_item(c, "IDEA", meeting_id, variant) for c in parsed.ideas),
         *(_normalize_item(c, "DECISION", meeting_id, variant) for c in parsed.decisions),
@@ -151,7 +151,7 @@ def _normalize_extraction(parsed: RawExtraction, meeting_id: str, variant: str) 
         id=meeting_id,
         title=parsed.meeting.title,
         date=_normalize_meeting_date(parsed.meeting.date, meeting_id),
-        source_url=parsed.meeting.source_url,
+        source_url=parsed.meeting.source_url or Path(key).name,
         items=items,
         review_candidates=review_candidates,
         topics=topics,
@@ -161,7 +161,7 @@ def _normalize_extraction(parsed: RawExtraction, meeting_id: str, variant: str) 
 def parse_meeting_from_s3(key: str) -> Meeting:
     parsed = RawExtraction.model_validate(_repair_json(s3_store.fetch_object_text(key)))
     meeting_id, variant = _derive_meeting_identity(key)
-    return _normalize_extraction(parsed, meeting_id, variant)
+    return _normalize_extraction(parsed, meeting_id, variant, key)
 
 
 _SOURCE_MEETING_PATTERN = re.compile(r"source meeting (MTG-\d{8}-\d{3}) \((\d{4}-\d{2}-\d{2}),")
@@ -253,8 +253,10 @@ def parse_meetings_from_s3(key: str) -> list[Meeting]:
     else:
         split = _split_by_embedded_source_meeting(parsed)
         if split is None:
-            return [_normalize_extraction(parsed, meeting_id, variant)]
-        meetings = [_normalize_extraction(sub, f"{meeting_id}-{index + 1}", variant) for index, sub in enumerate(split)]
+            return [_normalize_extraction(parsed, meeting_id, variant, key)]
+        meetings = [
+            _normalize_extraction(sub, f"{meeting_id}-{index + 1}", variant, key) for index, sub in enumerate(split)
+        ]
         if parsed.review_candidates:
             review_only = parsed.model_copy(
                 update={
@@ -267,14 +269,14 @@ def parse_meetings_from_s3(key: str) -> list[Meeting]:
                     ),
                 }
             )
-            meetings.append(_normalize_extraction(review_only, f"{meeting_id}-review", variant))
+            meetings.append(_normalize_extraction(review_only, f"{meeting_id}-review", variant, key))
         return meetings
 
     bundle_entries = _find_bundle_entries(raw)
     if bundle_entries is None:
         raise ValueError(f"'{key}' is not a recognized single-meeting or bundle extraction file")
     return [
-        _normalize_extraction(RawExtraction.model_validate(entry), f"{meeting_id}-{index + 1}", variant)
+        _normalize_extraction(RawExtraction.model_validate(entry), f"{meeting_id}-{index + 1}", variant, key)
         for index, entry in enumerate(bundle_entries)
     ]
 

@@ -100,6 +100,14 @@ existing item's confidence to `HIGH` instead of inserting a duplicate row. This 
 the one meeting, not global — items that merely *sound* similar across different meetings are left
 alone, same as the paragraph above.
 
+#### Meetings with no source link
+
+The extraction tool doesn't always have a recording/transcript URL to attach to a meeting (e.g. a 1:1
+with nothing recorded) and emits `"source_url": null` in that case. `ingest.RawMeetingInfo.source_url`
+accepts this and `ingest._normalize_extraction` falls back to the extraction file's own name (e.g.
+`YP-MS_1-1_Meeting-Extract_092326.json`) so the meeting still carries a human-identifiable reference
+back to its source file instead of failing ingestion outright.
+
 #### Ingesting a multi-meeting bundle
 
 A file can also be a **bundle** covering several meetings at once (e.g. a register export), instead
