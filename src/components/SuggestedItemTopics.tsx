@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Confidence, SuggestionRow } from "@/lib/domain";
-import { moveSuggestedItemsAction } from "@/lib/actions";
+import { createTopicAndMoveItemsAction, moveSuggestedItemsAction } from "@/lib/actions";
 
 type TopicOption = { id: string; name: string };
 
@@ -53,6 +53,40 @@ function groupByTopSuggestion(suggestions: SuggestionRow[]): SuggestionGroup[] {
   return [...groups.values()].sort((a, b) => b.highCount - a.highCount || b.meanScore - a.meanScore);
 }
 
+// Inline name field for filing items into a topic that doesn't exist yet; closes when left empty.
+function NewTopicForm({ onSubmit, onCancel }: { onSubmit: (name: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState("");
+
+  return (
+    <form
+      className="new-topic-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (name.trim()) onSubmit(name.trim());
+      }}
+      onBlur={(e) => {
+        if (!name.trim() && !e.currentTarget.contains(e.relatedTarget)) onCancel();
+      }}
+    >
+      <input
+        autoFocus
+        required
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onCancel();
+        }}
+        placeholder="New topic name"
+        aria-label="New topic name"
+      />
+      <button type="submit">Create</button>
+      <button type="button" className="new-topic-cancel" onClick={onCancel} aria-label="Cancel">
+        ×
+      </button>
+    </form>
+  );
+}
+
 export function SuggestedItemTopics({
   suggestions,
   topics,
@@ -70,6 +104,8 @@ export function SuggestedItemTopics({
   const [lastMove, setLastMove] = useState<LastMove | null>(null);
   // the one row whose "any topic" picker is open - mounting a single <select> instead of one per row
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  // the one open "new topic" field: an item id, or `group:<topicId>` for a group's selected rows
+  const [newTopicFor, setNewTopicFor] = useState<string | null>(null);
   // high-confidence matches start checked so a whole group can be confirmed in one click
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(suggestions.filter((s) => s.confidence === "HIGH").map((s) => s.id)),
@@ -122,6 +158,7 @@ export function SuggestedItemTopics({
     const itemIds = batch.flatMap((m) => m.itemIds);
     setError(null);
     setPickerFor(null);
+    setNewTopicFor(null);
     setLastMove(null);
     setHiddenIds(itemIds, true);
     try {
@@ -139,6 +176,27 @@ export function SuggestedItemTopics({
     } catch (err) {
       setHiddenIds(itemIds, false);
       setError(err instanceof Error ? err.message : "Could not move the items");
+    }
+  }
+
+  // Files items into a topic created on the spot; a name that already exists reuses that topic.
+  async function moveToNewTopic(name: string, itemIds: string[]) {
+    if (!itemIds.length) return;
+    const existing = topics.find((t) => t.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) return move([{ itemIds, topicId: existing.id }]);
+
+    setError(null);
+    setPickerFor(null);
+    setNewTopicFor(null);
+    setLastMove(null);
+    setHiddenIds(itemIds, true);
+    try {
+      const result = await createTopicAndMoveItemsAction(name, itemIds, returnTo);
+      if (result.error) throw new Error(result.error);
+      setLastMove({ itemIds, topicCount: 1 });
+    } catch (err) {
+      setHiddenIds(itemIds, false);
+      setError(err instanceof Error ? err.message : "Could not create the topic");
     }
   }
 
@@ -261,8 +319,30 @@ export function SuggestedItemTopics({
                               ))}
                             </select>
                           ) : (
-                            <button className="candidate-chip" onClick={() => setPickerFor(id)}>
+                            <button
+                              className="candidate-chip"
+                              onClick={() => {
+                                setNewTopicFor(null);
+                                setPickerFor(id);
+                              }}
+                            >
                               Other topic…
+                            </button>
+                          )}
+                          {newTopicFor === id ? (
+                            <NewTopicForm
+                              onSubmit={(name) => void moveToNewTopic(name, [id])}
+                              onCancel={() => setNewTopicFor(null)}
+                            />
+                          ) : (
+                            <button
+                              className="candidate-chip"
+                              onClick={() => {
+                                setPickerFor(null);
+                                setNewTopicFor(id);
+                              }}
+                            >
+                              + New topic…
                             </button>
                           )}
                         </div>
@@ -275,9 +355,28 @@ export function SuggestedItemTopics({
                     <input type="checkbox" checked={allSelected} onChange={(e) => setChecked(ids, e.target.checked)} />
                     Select all
                   </label>
-                  <button disabled={!selectedIds.length} onClick={() => void move([{ itemIds: selectedIds, topicId: group.topicId }])}>
-                    Move {selectedIds.length} selected to &quot;{group.topicName}&quot;
-                  </button>
+                  <span className="suggestion-group-moves">
+                    {newTopicFor === `group:${group.topicId}` ? (
+                      <NewTopicForm
+                        onSubmit={(name) => void moveToNewTopic(name, selectedIds)}
+                        onCancel={() => setNewTopicFor(null)}
+                      />
+                    ) : (
+                      <button
+                        className="suggestion-new-topic"
+                        disabled={!selectedIds.length}
+                        onClick={() => {
+                          setPickerFor(null);
+                          setNewTopicFor(`group:${group.topicId}`);
+                        }}
+                      >
+                        Move {selectedIds.length} selected to new topic…
+                      </button>
+                    )}
+                    <button disabled={!selectedIds.length} onClick={() => void move([{ itemIds: selectedIds, topicId: group.topicId }])}>
+                      Move {selectedIds.length} selected to &quot;{group.topicName}&quot;
+                    </button>
+                  </span>
                 </div>
               </details>
             );

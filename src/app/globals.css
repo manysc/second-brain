@@ -57,6 +57,12 @@
 .suggestion-group-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px 18px; border-top:1px solid var(--line); font-size:12px; }
 .suggestion-group-actions label { display:inline-flex; align-items:center; gap:6px; color:var(--muted); }
 .suggestion-group-actions button { background:var(--ink); color:#fff; }
+.suggestion-group-moves { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.suggestion-group-actions .suggestion-new-topic { background:transparent; color:var(--ink); }
+.new-topic-form { display:inline-flex; align-items:center; gap:4px; }
+.new-topic-form input { border:1px solid var(--line); background:transparent; padding:4px 6px; font:600 11px 'DM Sans'; color:var(--ink); width:160px; max-width:100%; }
+.item-topic-suggestions .new-topic-form button { background:var(--ink); color:#fff; padding:4px 8px; font-size:11px; }
+.item-topic-suggestions .new-topic-form .new-topic-cancel { border:0; background:transparent; color:var(--muted); padding:0 4px; font-size:14px; }
 .item-topic-suggestions button:disabled { opacity:.4; cursor:not-allowed; }
 .item-topic-suggestions .error-banner { margin:0 0 14px; }
 .ingest-control { display:flex; flex-direction:column; align-items:flex-end; gap:8px; } .ingest-control .error-banner { margin:0; } .ingest-status { margin:0; color:var(--muted); font-size:12px; }

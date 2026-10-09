@@ -144,6 +144,34 @@ export async function moveSuggestedItemsAction(
   return error ? { error, failedItemIds } : {};
 }
 
+// Creates a topic and files the items into it in one step, for when none of the suggested topics fit.
+// Returns like moveSuggestedItemsAction; if the move fails the topic still exists (empty) and its id comes back.
+export async function createTopicAndMoveItemsAction(
+  name: string,
+  itemIds: string[],
+  returnTo: string,
+): Promise<{ error?: string; topicId?: string }> {
+  const topicName = name.trim();
+  if (!topicName) return { error: "Topic name is required" };
+  if (itemIds.length === 0) return {};
+
+  let topicId: string;
+  try {
+    topicId = (await createTopic(topicName)).id;
+  } catch (err) {
+    return { error: errorMessage(err) };
+  }
+  revalidatePath("/topics");
+  try {
+    await moveItemsTopic(itemIds, topicId);
+  } catch (err) {
+    return { error: `Created "${topicName}" but could not move the items: ${errorMessage(err)}`, topicId };
+  }
+  revalidatePath(returnTo);
+  revalidatePath(`/topics/${topicId}`);
+  return { topicId };
+}
+
 export async function mergeTopicsAction(sourceTopicId: string, targetTopicId: string): Promise<void> {
   try {
     await mergeTopics(sourceTopicId, targetTopicId);

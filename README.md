@@ -231,6 +231,7 @@ It powers:
   - HIGH items are pre-selected, and "Move N selected to …" confirms a whole group.
   - "File N selected into M topics" confirms every group's selected items in one click. The Select **High** / **High + medium** / **None** presets change the selection across all groups at once.
   - The 2nd and 3rd candidates are one-click alternatives, and an "Other topic…" picker moves an item anywhere else.
+  - When no existing topic fits, **+ New topic…** (per item) and **Move N selected to new topic…** (per group) create a topic and file the items into it in one step. Typing the name of an existing topic (any case) reuses that topic instead of creating a duplicate.
   - Every move from the panel (single item, group or all groups) can be undone. An undo bar sends that batch back to Uncategorized, where the items reappear still checked so you can untick the wrong ones and file the rest again.
   - Nothing moves without a click.
 - **Review Center** (`/review`): the topic picker for a pending candidate, and the "use existing topic" hint on new-topic proposals, are pre-selected with the top-ranked topic when it's at least MEDIUM confidence.
@@ -242,6 +243,8 @@ Filing without a human in the loop is unchanged: ingestion auto-filing, and acce
 (Changelog: moves from the suggestions panel are now optimistic. Moved rows disappear immediately and reappear with an error banner if the move fails, instead of waiting for a full page re-render. The panel mounts a single "Other topic…" picker on demand instead of one per row and receives only the fields it displays. The Uncategorized page renders the first 25 item cards per column, with a "Show more" link (`?limit=`); other topics are unchanged. This took the page from ~12.5 MB / ~12s to ~4.4 MB / ~4s in dev.)
 
 (Changelog: to cut review fatigue, the suggestions panel gained a single "File N selected into M topics" button covering every group, High / High + medium / None selection presets, and undo for the last move. Filing a batch now takes one click instead of one per group. `moveSuggestedItemsAction` now takes a list of `{ itemIds, topicId }` moves and revalidates once per batch.)
+
+(Changelog: the suggestions panel can now create a topic while you review. `createTopicAndMoveItemsAction` creates the topic and moves the items in one step, and these moves can be undone like any other panel move. Undo returns the items to Uncategorized but keeps the new, now-empty topic, which can be deleted from its page.)
 
 ## Ask page
 
