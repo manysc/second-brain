@@ -59,4 +59,12 @@
 .suggestion-group-actions button { background:var(--ink); color:#fff; }
 .item-topic-suggestions button:disabled { opacity:.4; cursor:not-allowed; }
 .item-topic-suggestions .error-banner { margin:0 0 14px; }
+.suggestion-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:0 0 14px; }
+.suggestion-presets { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; }
+.suggestion-presets button { background:transparent; color:var(--ink); padding:4px 8px; font-size:11px; }
+.suggestion-file-all { background:var(--ink); color:#fff; }
+.undo-bar { display:flex; align-items:center; gap:12px; margin:0 0 14px; padding:10px 16px; background:var(--panel); border:1px solid var(--line); font-size:12px; }
+.undo-bar span { flex:1; }
+.undo-bar .undo-button { background:var(--ink); color:#fff; padding:6px 12px; }
+.undo-bar .undo-dismiss { border:0; background:transparent; color:var(--muted); padding:0 4px; font-size:16px; }
 .show-more { color:var(--muted); font-size:12px; margin:10px 0 0; } .show-more a { text-decoration:underline; }

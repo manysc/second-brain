@@ -24,6 +24,7 @@ import math
 import os
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
+from functools import lru_cache
 from typing import Literal
 
 from sqlalchemy import select
@@ -634,13 +635,21 @@ class HuggingFaceZeroShotClassifier(TopicPrioritySemanticClassifier):
 
     MODEL_NAME = "MoritzLaurer/ModernBERT-large-zeroshot-v2.0"
 
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _pipeline(model_name: str):
+        # built once per process - constructing it loads the model, and priority recalculation runs on
+        # every review accept
+        from transformers import pipeline  # lazy import: optional dependency
+
+        return pipeline("zero-shot-classification", model=model_name)
+
     def classify(self, context: str) -> SemanticContribution | None:
         try:
-            from transformers import pipeline  # lazy import: optional dependency
+            classifier = self._pipeline(self.MODEL_NAME)
         except Exception:
             return None
         try:
-            classifier = pipeline("zero-shot-classification", model=self.MODEL_NAME)
             result = classifier(context, list(HYPOTHESES.values()), multi_label=False)
             label_by_hypothesis = {v: k for k, v in HYPOTHESES.items()}
             scores = {label_by_hypothesis[label]: score for label, score in zip(result["labels"], result["scores"])}

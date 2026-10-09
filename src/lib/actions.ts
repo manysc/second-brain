@@ -114,23 +114,33 @@ export async function moveItemsTopicAction(itemIds: string[], topicId: string | 
 }
 
 // Like moveItemsTopicAction but returns instead of redirecting, so a client component can hide the
-// moved items optimistically instead of waiting for a full page re-render.
+// moved items optimistically instead of waiting for a full page re-render. Takes a batch of moves
+// (one per target topic) so filing every group at once costs a single revalidation; a failed move
+// doesn't stop the rest, and its items come back in `failedItemIds`.
 export async function moveSuggestedItemsAction(
-  itemIds: string[],
-  topicId: string,
+  moves: { itemIds: string[]; topicId: string }[],
   returnTo: string,
-): Promise<{ error?: string }> {
-  if (itemIds.length === 0) return {};
+): Promise<{ error?: string; failedItemIds?: string[] }> {
+  let error: string | undefined;
+  const failedItemIds: string[] = [];
+  const movedTopicIds: string[] = [];
 
-  try {
-    await moveItemsTopic(itemIds, topicId);
-  } catch (err) {
-    return { error: errorMessage(err) };
+  for (const { itemIds, topicId } of moves) {
+    if (itemIds.length === 0) continue;
+    try {
+      await moveItemsTopic(itemIds, topicId);
+      movedTopicIds.push(topicId);
+    } catch (err) {
+      error ??= errorMessage(err);
+      failedItemIds.push(...itemIds);
+    }
   }
-  revalidatePath("/topics");
-  revalidatePath(returnTo);
-  revalidatePath(`/topics/${topicId}`);
-  return {};
+  if (movedTopicIds.length) {
+    revalidatePath("/topics");
+    revalidatePath(returnTo);
+    for (const topicId of movedTopicIds) revalidatePath(`/topics/${topicId}`);
+  }
+  return error ? { error, failedItemIds } : {};
 }
 
 export async function mergeTopicsAction(sourceTopicId: string, targetTopicId: string): Promise<void> {
@@ -142,30 +152,24 @@ export async function mergeTopicsAction(sourceTopicId: string, targetTopicId: st
   revalidatePath("/topics");
 }
 
-async function decideReviewCandidate(formData: FormData, status: "ACCEPTED" | "REJECTED"): Promise<void> {
-  const candidateId = String(formData.get("candidateId") ?? "");
-  // only the accept form has a topic picker; "" there means the reviewer chose Uncategorized
-  const topicId = status === "ACCEPTED" && formData.has("topicId") ? String(formData.get("topicId")) : undefined;
-
+// Returns instead of redirecting, so ReviewCandidateList can hide the decided candidate optimistically
+// instead of waiting for a full page re-render. topicId (accept only): "" = Uncategorized.
+export async function decideReviewCandidateAction(
+  candidateId: string,
+  status: "ACCEPTED" | "REJECTED",
+  topicId?: string,
+): Promise<{ error?: string }> {
   try {
-    await updateReviewStatus(candidateId, status, topicId);
+    await updateReviewStatus(candidateId, status, status === "ACCEPTED" ? topicId : undefined);
   } catch (err) {
-    redirect(`/review?error=${encodeURIComponent(errorMessage(err))}`);
+    return { error: errorMessage(err) };
   }
   revalidatePath("/review");
   revalidatePath("/dashboard");
   revalidatePath("/items");
   revalidatePath("/topics");
   revalidatePath("/meetings");
-  redirect("/review");
-}
-
-export async function acceptReviewAction(formData: FormData): Promise<void> {
-  await decideReviewCandidate(formData, "ACCEPTED");
-}
-
-export async function rejectReviewAction(formData: FormData): Promise<void> {
-  await decideReviewCandidate(formData, "REJECTED");
+  return {};
 }
 
 function revalidateAfterTopicProposal(): void {
@@ -176,30 +180,30 @@ function revalidateAfterTopicProposal(): void {
   revalidatePath("/meetings");
 }
 
-export async function acceptTopicProposalAction(formData: FormData): Promise<void> {
-  const suggestedName = String(formData.get("suggestedName") ?? "");
-  const topicName = String(formData.get("topicName") ?? "").trim();
-  const existingTopicId = String(formData.get("existingTopicId") ?? "");
-
+// Like decideReviewCandidateAction, these return instead of redirecting so TopicProposalList can hide
+// the card optimistically. existingTopicId wins over topicName; topicName null = the suggested name.
+export async function acceptTopicProposalAction(
+  suggestedName: string,
+  topicName: string | null,
+  existingTopicId: string | null,
+): Promise<{ error?: string }> {
   try {
-    await acceptTopicProposal(suggestedName, topicName || null, existingTopicId || null);
+    await acceptTopicProposal(suggestedName, topicName, existingTopicId);
   } catch (err) {
-    redirect(`/review?error=${encodeURIComponent(errorMessage(err))}`);
+    return { error: errorMessage(err) };
   }
   revalidateAfterTopicProposal();
-  redirect("/review");
+  return {};
 }
 
-export async function rejectTopicProposalAction(formData: FormData): Promise<void> {
-  const suggestedName = String(formData.get("suggestedName") ?? "");
-
+export async function rejectTopicProposalAction(suggestedName: string): Promise<{ error?: string }> {
   try {
     await rejectTopicProposal(suggestedName);
   } catch (err) {
-    redirect(`/review?error=${encodeURIComponent(errorMessage(err))}`);
+    return { error: errorMessage(err) };
   }
   revalidateAfterTopicProposal();
-  redirect("/review");
+  return {};
 }
 
 function revalidatePriorityAffectedPaths(topicId: string): void {

@@ -294,6 +294,19 @@ def test_accept_review_candidate_into_chosen_topic(db_ready):
             session.commit()
 
 
+def test_pending_review_candidates_drops_decided_ones(db_ready):
+    meeting_id = _unique("review-meeting")
+    try:
+        candidate_id = _add_review_candidate(meeting_id, _DESCRIPTIONS[2])
+        pending = {c.id: c for c in data.pending_review_candidates()}
+        assert pending[candidate_id].status == "PENDING"
+        assert all(c.status == "PENDING" for c in pending.values())
+        data.set_review_status(candidate_id, "REJECTED")
+        assert candidate_id not in {c.id for c in data.pending_review_candidates()}
+    finally:
+        _delete_candidate_meeting(meeting_id)
+
+
 def test_accept_review_candidate_with_blank_topic_uses_uncategorized_and_bad_topic_is_rejected(db_ready):
     meeting_id = _unique("review-meeting")
     try:
@@ -306,6 +319,28 @@ def test_accept_review_candidate_with_blank_topic_uses_uncategorized_and_bad_top
             assert session.get(TopicRow, item.topic_id).name == "Uncategorized"
     finally:
         _delete_candidate_meeting(meeting_id)
+
+
+def test_topic_ranker_is_reused_until_its_inputs_change(db_ready, monkeypatch):
+    builds = []
+    real_build = data._topic_ranker
+    monkeypatch.setattr(data, "_topic_ranker", lambda rows: builds.append(1) or real_build(rows))
+    monkeypatch.setattr(data, "_ranker_cache", None)
+    topic = data.create_topic(_unique("ranker-cache-topic"))
+    try:
+        with db.get_session() as session:
+            first = data._load_topic_ranker(session)
+            assert data._load_topic_ranker(session) is first
+        assert len(builds) == 1
+
+        data.add_topic_tag(topic.id, "cache-buster")
+        with db.get_session() as session:
+            assert data._load_topic_ranker(session) is not first
+        assert len(builds) == 2
+    finally:
+        with db.get_session() as session:
+            session.delete(session.get(TopicRow, topic.id))
+            session.commit()
 
 
 def test_candidates_get_a_suggested_topic_only_for_close_matches(db_ready):

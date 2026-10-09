@@ -156,6 +156,11 @@ proxy), `backend/app/embeddings.py` catches the failure and falls back to a dete
 `HashingVectorizer` so the pgvector pipeline still runs end-to-end. It self-upgrades to the real
 model automatically once the download succeeds - no code change or re-ingestion required.
 
+`embed_texts` memoizes vectors by exact text in a bounded in-process LRU (4096 entries), so repeat
+texts (pending review candidates re-ranked on every `/review` load, a candidate's description when
+it's accepted) skip the model. The FastAPI app also warms the model in the background at startup,
+so the first request after a restart doesn't stall on loading it.
+
 ### Hugging Face download troubleshooting
 
 `sentence-transformers` fetches `all-MiniLM-L6-v2` from the Hugging Face Hub on first use and caches
@@ -214,7 +219,9 @@ It powers:
 - **Uncategorized topic page** (`GET /api/topics/suggested-item-topics`, `SuggestedItemTopics`): every Uncategorized item gets its top 3 candidate topics.
   - Items are grouped under their best match, with groups holding the most HIGH-confidence items first.
   - HIGH items are pre-selected, and "Move N selected to …" confirms a whole group.
+  - "File N selected into M topics" confirms every group's selected items in one click. The Select **High** / **High + medium** / **None** presets change the selection across all groups at once.
   - The 2nd and 3rd candidates are one-click alternatives, and an "Other topic…" picker moves an item anywhere else.
+  - Every move from the panel (single item, group or all groups) can be undone. An undo bar sends that batch back to Uncategorized, where the items reappear still checked so you can untick the wrong ones and file the rest again.
   - Nothing moves without a click.
 - **Review Center** (`/review`): the topic picker for a pending candidate, and the "use existing topic" hint on new-topic proposals, are pre-selected with the top-ranked topic when it's at least MEDIUM confidence.
 
@@ -223,6 +230,8 @@ Filing without a human in the loop is unchanged: ingestion auto-filing, and acce
 (Changelog: replaced the single-centroid, ≥ 0.6, top-20 suggestion list, which surfaced 6 of 346 Uncategorized items, with ranked top-3 candidates for every item, a confidence band and grouped bulk confirmation. The Review Center pre-selection now uses the same ranker.)
 
 (Changelog: moves from the suggestions panel are now optimistic. Moved rows disappear immediately and reappear with an error banner if the move fails, instead of waiting for a full page re-render. The panel mounts a single "Other topic…" picker on demand instead of one per row and receives only the fields it displays. The Uncategorized page renders the first 25 item cards per column, with a "Show more" link (`?limit=`); other topics are unchanged. This took the page from ~12.5 MB / ~12s to ~4.4 MB / ~4s in dev.)
+
+(Changelog: to cut review fatigue, the suggestions panel gained a single "File N selected into M topics" button covering every group, High / High + medium / None selection presets, and undo for the last move. Filing a batch now takes one click instead of one per group. `moveSuggestedItemsAction` now takes a list of `{ itemIds, topicId }` moves and revalidates once per batch.)
 
 ## Ask page
 
@@ -238,7 +247,8 @@ A few smaller features exist in the code and API but aren't covered elsewhere in
 - **Independent status controls** — an item's or a topic's status can be changed directly (`PATCH /api/items/{id}/status`, `PATCH /api/topics/{id}/status`), separate from the priority-classification system.
 - **Item-level manual priority override** — `PATCH /api/items/{id}/priority-override` mirrors the topic priority override (see Automatic Topic Priority Classification) but scoped to a single item.
 - **Topic merge suggestions** — `GET /api/topics/suggested-merges` and the `SuggestedTopicMerges` component surface candidate topics worth merging, ahead of the `POST /api/topics/{id}/merge` call.
-- **Topic proposals from register-derived meetings** — `GET /api/review/topic-proposals`, `POST /api/review/topic-proposals/accept`, and `POST /api/review/topic-proposals/reject` (`TopicProposalCard`) let a reviewer turn a suggested new topic name into a real topic, or reject it — distinct from the regular per-candidate review flow in `/review`.
+- **Topic proposals from register-derived meetings** — `GET /api/review/topic-proposals`, `POST /api/review/topic-proposals/accept`, and `POST /api/review/topic-proposals/reject` (`TopicProposalCard`) let a reviewer turn a suggested new topic name into a real topic, or reject it — distinct from the regular per-candidate review flow in `/review`. Picking a topic in a card's "or file under existing topic" dropdown files the proposal right away, with no Accept click. Accept is still used to keep the pre-selected topic or to create a new one. Like candidate decisions, the card disappears at once (`TopicProposalList`) and comes back with an error banner if saving fails.
+- **Instant Accept/Reject on `/review`** — `ReviewCandidateList` hides a candidate as soon as Accept or Reject is clicked and calls `decideReviewCandidateAction`, which returns instead of redirecting; on failure the candidate reappears with an error banner. (Changelog: Accept used to wait for a full redirect and page re-render. `GET /api/review` now queries pending candidates directly (`data.pending_review_candidates`) instead of loading every meeting and item, and the zero-shot priority classifier pipeline, when enabled, is built once per process instead of on every accept. The topic ranker behind `/api/review`, `/api/review/topic-proposals` and the Uncategorized topic suggestions (`data._load_topic_ranker`) is now cached and reused until a fingerprint of topic names/tags and item descriptions/embeddings changes. Writes made by the MCP server from another process count too. That removes a ~1.4s rebuild from each of those requests.)
 - **Related topics** — `GET /api/topics/{id}/related` and the `RelatedTopics` component show topics connected to the one being viewed.
 - **Follow-up digest** — `GET /api/follow-up` (configurable `limit` and `dueSoonDays`) returns a digest of items needing follow-up; this is the data source behind `/briefing`.
 - **Free-text search** — `GET /api/search?q=` does keyword search across items and topics, separate from the embedding-based "similar items" feature described above.

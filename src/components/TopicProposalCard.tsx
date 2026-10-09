@@ -1,7 +1,20 @@
-import type { Topic, TopicProposal } from "@/lib/domain";
-import { acceptTopicProposalAction, rejectTopicProposalAction } from "@/lib/actions";
+"use client";
 
-export function TopicProposalCard({ proposal, topics }: { proposal: TopicProposal; topics: Topic[] }) {
+import type { TopicProposal } from "@/lib/domain";
+
+type TopicOption = { id: string; name: string };
+
+export function TopicProposalCard({
+  proposal,
+  topics,
+  onAccept,
+  onReject,
+}: {
+  proposal: TopicProposal;
+  topics: TopicOption[];
+  onAccept: (topicName: string | null, existingTopicId: string | null) => void;
+  onReject: () => void;
+}) {
   const formId = `accept-${encodeURIComponent(proposal.name)}`;
   return (
     <article className="review-item topic-proposal">
@@ -17,15 +30,31 @@ export function TopicProposalCard({ proposal, topics }: { proposal: TopicProposa
           ))}
           {proposal.items.length > 3 ? <li>…and {proposal.items.length - 3} more</li> : null}
         </ul>
-        <form className="topic-proposal-form" action={acceptTopicProposalAction} id={formId}>
-          <input type="hidden" name="suggestedName" value={proposal.name} />
+        <form
+          className="topic-proposal-form"
+          id={formId}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            const topicName = String(form.get("topicName") ?? "").trim();
+            const existingTopicId = String(form.get("existingTopicId") ?? "");
+            onAccept(topicName || null, existingTopicId || null);
+          }}
+        >
           <label>
             Create topic as
             <input name="topicName" defaultValue={proposal.name} />
           </label>
           <label>
             or file under existing topic
-            <select name="existingTopicId" defaultValue={proposal.suggestedExistingTopicId ?? ""}>
+            {/* picking a topic files the proposal right away; Accept is for the pre-selected or a new topic */}
+            <select
+              name="existingTopicId"
+              defaultValue={proposal.suggestedExistingTopicId ?? ""}
+              onChange={(e) => {
+                if (e.target.value) onAccept(null, e.target.value);
+              }}
+            >
               <option value="">— create new topic —</option>
               {topics.map((topic) => (
                 <option key={topic.id} value={topic.id}>
@@ -38,8 +67,12 @@ export function TopicProposalCard({ proposal, topics }: { proposal: TopicProposa
       </div>
       <div className="review-actions">
         <button form={formId}>Accept</button>
-        <form action={rejectTopicProposalAction}>
-          <input type="hidden" name="suggestedName" value={proposal.name} />
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onReject();
+          }}
+        >
           <button>Reject</button>
         </form>
       </div>

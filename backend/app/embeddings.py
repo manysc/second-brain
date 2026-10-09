@@ -8,6 +8,8 @@ model automatically once it becomes reachable - no code change needed.
 from __future__ import annotations
 
 import sys
+import threading
+from collections import OrderedDict
 from functools import lru_cache
 
 from app.db_models import EMBEDDING_DIM
@@ -43,6 +45,13 @@ def _model():
         return _HashingFallback(EMBEDDING_DIM)
 
 
+# Memo keyed by the exact text: the review page re-embeds every pending candidate on each load and
+# accepting one embeds its description again, so repeat texts skip the model entirely.
+_CACHE_SIZE = 4096
+_cache: OrderedDict[str, list[float]] = OrderedDict()
+_cache_lock = threading.Lock()
+
+
 def embed_text(text: str) -> list[float]:
     return embed_texts([text])[0]
 
@@ -50,6 +59,22 @@ def embed_text(text: str) -> list[float]:
 def embed_texts(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
-    vectors = _model().encode(texts, convert_to_numpy=True, normalize_embeddings=True)
-    return vectors.tolist()
+    found: dict[str, list[float]] = {}
+    with _cache_lock:
+        for text in texts:
+            if text in _cache:
+                _cache.move_to_end(text)
+                found[text] = _cache[text]
+    misses = list(dict.fromkeys(text for text in texts if text not in found))
+    if misses:
+        vectors = _model().encode(misses, convert_to_numpy=True, normalize_embeddings=True).tolist()
+        found.update(zip(misses, vectors))
+        with _cache_lock:
+            for text, vector in zip(misses, vectors):
+                _cache[text] = vector
+                _cache.move_to_end(text)
+            while len(_cache) > _CACHE_SIZE:
+                _cache.popitem(last=False)
+    # copies, so a caller mutating its result can't corrupt the cached vector
+    return [list(found[text]) for text in texts]
 

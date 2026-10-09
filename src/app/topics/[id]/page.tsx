@@ -194,6 +194,7 @@ export default async function TopicDetail({
             .map(({ id, name }) => ({ id, name }))
             .sort((a, b) => a.name.localeCompare(b.name))}
           returnTo={`/topics/${topic.id}`}
+          uncategorizedTopicId={topic.id}
         />
       ) : null}
       <RelatedTopics topics={relatedTopics} />

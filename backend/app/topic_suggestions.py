@@ -81,8 +81,10 @@ def _normalize_rows(matrix: np.ndarray) -> np.ndarray:
 
 
 class TopicRanker:
-    """Built once per request from every candidate topic, then ranks any number of items.
-    Topics with no embedded items are skipped - there is nothing to compare against."""
+    """Built from every candidate topic, then ranks any number of items. data._load_topic_ranker
+    reuses one instance across requests (and threads) until the topics/items change, so it must stay
+    read-only after __init__. Topics with no embedded items are skipped - there is nothing to compare
+    against."""
 
     def __init__(self, profiles: Sequence[TopicProfile]) -> None:
         usable = [p for p in profiles if len(p.item_embeddings)]

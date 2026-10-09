@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import data, db, ingest
+from app import data, db, embeddings, ingest
 from app.models import (
     FollowUpResponse,
     GraphData,
@@ -79,16 +79,26 @@ def _run_startup_ingest() -> None:
             return
 
 
+def _warm_embeddings() -> None:
+    # loads the embedding model up front so the first review page load / accept isn't a multi-second stall
+    try:
+        embeddings.embed_text("warm-up")
+    except Exception:  # warm-up is best effort
+        logger.warning("embedding warm-up failed", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db.init_db()
+    warm_task = asyncio.create_task(asyncio.to_thread(_warm_embeddings))
     ingest_task: asyncio.Task[None] | None = None
     if os.environ.get("INGEST_ON_STARTUP", "true").lower() not in ("false", "0"):
         # off the startup path: the API serves existing Postgres data while ingestion catches up
         ingest_task = asyncio.create_task(asyncio.to_thread(_run_startup_ingest))
     yield
-    if ingest_task is not None and not ingest_task.done():
-        ingest_task.cancel()
+    for task in (warm_task, ingest_task):
+        if task is not None and not task.done():
+            task.cancel()
 
 
 app = FastAPI(title="second-brain backend", lifespan=lifespan)
@@ -474,8 +484,7 @@ def get_topic_image(topic_id: str, image_id: str) -> Response:
 
 @app.get("/api/review", response_model=list[ReviewCandidate])
 def get_review() -> list[ReviewCandidate]:
-    pending = [c for c in data.all_review_candidates(data.load_meetings()) if c.status == "PENDING"]
-    return data.with_suggested_topics(pending)
+    return data.with_suggested_topics(data.pending_review_candidates())
 
 
 @app.get("/api/review/topic-proposals", response_model=list[TopicProposal])

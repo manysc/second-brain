@@ -1,10 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { SuggestionRow } from "@/lib/domain";
+import type { Confidence, SuggestionRow } from "@/lib/domain";
 import { moveSuggestedItemsAction } from "@/lib/actions";
 
 type TopicOption = { id: string; name: string };
+
+type Move = { itemIds: string[]; topicId: string };
+
+// the last confirmed batch, kept so it can be sent back to Uncategorized in one click
+type LastMove = { itemIds: string[]; topicCount: number };
 
 type SuggestionGroup = {
   topicId: string;
@@ -17,6 +22,10 @@ type SuggestionGroup = {
 
 function percent(score: number) {
   return Math.round(score * 100);
+}
+
+function plural(count: number, word: string) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
 // Groups items under their best-ranked topic; topics with the most confident matches come first.
@@ -48,14 +57,17 @@ export function SuggestedItemTopics({
   suggestions,
   topics,
   returnTo,
+  uncategorizedTopicId,
 }: {
   suggestions: SuggestionRow[];
   topics: TopicOption[];
   returnTo: string;
+  uncategorizedTopicId: string;
 }) {
   // Moved items are hidden right away; the server refresh that follows drops them from `suggestions`.
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [lastMove, setLastMove] = useState<LastMove | null>(null);
   // the one row whose "any topic" picker is open - mounting a single <select> instead of one per row
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   // high-confidence matches start checked so a whole group can be confirmed in one click
@@ -68,6 +80,19 @@ export function SuggestedItemTopics({
 
   const counts = { HIGH: 0, MEDIUM: 0, LOW: 0 };
   for (const suggestion of visible) counts[suggestion.confidence] += 1;
+
+  // every group's checked rows, each bound for that group's topic - what "File all" confirms
+  const plannedMoves: Move[] = groups
+    .map((group) => ({
+      topicId: group.topicId,
+      itemIds: group.suggestions.filter((s) => selected.has(s.id)).map((s) => s.id),
+    }))
+    .filter((m) => m.itemIds.length);
+  const plannedCount = plannedMoves.reduce((sum, m) => sum + m.itemIds.length, 0);
+
+  function selectBands(bands: Confidence[]) {
+    setSelected(new Set(visible.filter((s) => bands.includes(s.confidence)).map((s) => s.id)));
+  }
 
   function setChecked(ids: string[], checked: boolean) {
     setSelected((current) => {
@@ -91,17 +116,49 @@ export function SuggestedItemTopics({
     });
   }
 
-  async function move(itemIds: string[], topicId: string) {
-    if (!itemIds.length) return;
+  async function move(moves: Move[]) {
+    const batch = moves.filter((m) => m.itemIds.length);
+    if (!batch.length) return;
+    const itemIds = batch.flatMap((m) => m.itemIds);
     setError(null);
     setPickerFor(null);
+    setLastMove(null);
     setHiddenIds(itemIds, true);
     try {
-      const result = await moveSuggestedItemsAction(itemIds, topicId, returnTo);
-      if (result.error) throw new Error(result.error);
+      const result = await moveSuggestedItemsAction(batch, returnTo);
+      const failed = new Set(result.failedItemIds ?? []);
+      if (failed.size) setHiddenIds([...failed], false);
+      if (result.error) setError(result.error);
+      const moved = batch.filter((m) => m.itemIds.some((id) => !failed.has(id)));
+      if (moved.length) {
+        setLastMove({
+          itemIds: itemIds.filter((id) => !failed.has(id)),
+          topicCount: new Set(moved.map((m) => m.topicId)).size,
+        });
+      }
     } catch (err) {
       setHiddenIds(itemIds, false);
       setError(err instanceof Error ? err.message : "Could not move the items");
+    }
+  }
+
+  // Sends the last batch back to Uncategorized; the server refresh then returns the rows to the
+  // panel, still checked, so the wrong ones can be unticked and the rest re-filed.
+  async function undo() {
+    if (!lastMove) return;
+    const previous = lastMove;
+    setError(null);
+    setLastMove(null);
+    try {
+      const result = await moveSuggestedItemsAction(
+        [{ itemIds: previous.itemIds, topicId: uncategorizedTopicId }],
+        returnTo,
+      );
+      if (result.error) throw new Error(result.error);
+      setHiddenIds(previous.itemIds, false);
+    } catch (err) {
+      setLastMove(previous);
+      setError(err instanceof Error ? err.message : "Could not undo the move");
     }
   }
 
@@ -114,13 +171,37 @@ export function SuggestedItemTopics({
         </div>
       </div>
       {error ? <p className="error-banner">{error}</p> : null}
+      {lastMove ? (
+        <p className="undo-bar" role="status">
+          <span>
+            Filed {plural(lastMove.itemIds.length, "item")} into {plural(lastMove.topicCount, "topic")}.
+          </span>
+          <button className="undo-button" onClick={() => void undo()}>
+            Undo
+          </button>
+          <button className="undo-dismiss" onClick={() => setLastMove(null)} aria-label="Dismiss">
+            ×
+          </button>
+        </p>
+      ) : null}
       {visible.length ? (
         <>
           <p className="suggestion-summary">
             {visible.length} items · {counts.HIGH} high · {counts.MEDIUM} medium · {counts.LOW} low confidence ·
             grouped under {groups.length} suggested topics. High-confidence matches are pre-selected; nothing moves
-            until you confirm.
+            until you confirm, and every move can be undone.
           </p>
+          <div className="suggestion-toolbar">
+            <span className="suggestion-presets">
+              Select
+              <button onClick={() => selectBands(["HIGH"])}>High</button>
+              <button onClick={() => selectBands(["HIGH", "MEDIUM"])}>High + medium</button>
+              <button onClick={() => selectBands([])}>None</button>
+            </span>
+            <button className="suggestion-file-all" disabled={!plannedCount} onClick={() => void move(plannedMoves)}>
+              File {plannedCount} selected into {plural(plannedMoves.length, "topic")}
+            </button>
+          </div>
           {groups.map((group) => {
             const ids = group.suggestions.map((s) => s.id);
             const selectedIds = ids.filter((id) => selected.has(id));
@@ -156,7 +237,7 @@ export function SuggestedItemTopics({
                             <button
                               className="candidate-chip"
                               key={candidate.topicId}
-                              onClick={() => void move([id], candidate.topicId)}
+                              onClick={() => void move([{ itemIds: [id], topicId: candidate.topicId }])}
                               title={`Move this item to "${candidate.topicName}"`}
                             >
                               → {candidate.topicName} ({percent(candidate.score)}%)
@@ -166,7 +247,7 @@ export function SuggestedItemTopics({
                             <select
                               autoFocus
                               defaultValue=""
-                              onChange={(e) => void move([id], e.target.value)}
+                              onChange={(e) => void move([{ itemIds: [id], topicId: e.target.value }])}
                               onBlur={() => setPickerFor(null)}
                               aria-label="Move to another topic"
                             >
@@ -194,7 +275,7 @@ export function SuggestedItemTopics({
                     <input type="checkbox" checked={allSelected} onChange={(e) => setChecked(ids, e.target.checked)} />
                     Select all
                   </label>
-                  <button disabled={!selectedIds.length} onClick={() => void move(selectedIds, group.topicId)}>
+                  <button disabled={!selectedIds.length} onClick={() => void move([{ itemIds: selectedIds, topicId: group.topicId }])}>
                     Move {selectedIds.length} selected to &quot;{group.topicName}&quot;
                   </button>
                 </div>

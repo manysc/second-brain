@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import itertools
 import logging
+import threading
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import numpy as np
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session, selectinload
 
 from app import db, embeddings, s3_store, topic_priority, topic_suggestions
@@ -256,6 +257,19 @@ def all_review_candidates(meetings: list[Meeting]) -> list[ReviewCandidate]:
     return [candidate for meeting in meetings for candidate in meeting.review_candidates]
 
 
+def pending_review_candidates() -> list[ReviewCandidate]:
+    """Candidates still awaiting a decision, newest meeting first. Queries the candidates directly
+    instead of going through load_meetings, which would also load every meeting's items."""
+    with db.get_session() as session:
+        stmt = (
+            select(ReviewCandidateRow)
+            .join(MeetingRow)
+            .where(ReviewCandidateRow.status == "PENDING")
+            .order_by(MeetingRow.date.desc(), ReviewCandidateRow.id)
+        )
+        return [_review_candidate_from_row(row) for row in session.execute(stmt).scalars().all()]
+
+
 def _matching_topic_centroids(session: Session) -> dict[str, np.ndarray]:
     rows = [
         row
@@ -283,9 +297,40 @@ def _topic_ranker(rows: list[TopicRow]) -> topic_suggestions.TopicRanker:
     )
 
 
+# Building the ranker (loading every topic's items + fitting TF-IDF) takes ~1.4s, and every /review render
+# needs it twice, so the last one built is reused until _ranker_fingerprint changes.
+_ranker_cache: tuple[str, topic_suggestions.TopicRanker] | None = None
+_ranker_lock = threading.Lock()
+
+# Covers exactly what _topic_ranker reads (topic id/name/tags, item id/description/embedding), so any
+# write changes it - including ones the MCP server makes from another process.
+_RANKER_FINGERPRINT_SQL = text(
+    """
+    select md5(coalesce(string_agg(
+        concat_ws('|', t.id, t.name, array_to_string(t.tags, ','), i.id, md5(i.description), md5(i.embedding::text)),
+        ',' order by t.id, i.id
+    ), ''))
+    from topics t left join knowledge_items i on i.topic_id = t.id
+    where t.name <> :uncategorized
+    """
+)
+
+
+def _ranker_fingerprint(session: Session) -> str:
+    return session.execute(_RANKER_FINGERPRINT_SQL, {"uncategorized": UNCATEGORIZED_TOPIC}).scalar_one()
+
+
 def _load_topic_ranker(session: Session) -> topic_suggestions.TopicRanker:
-    rows = session.execute(select(TopicRow).options(selectinload(TopicRow.items))).scalars().all()
-    return _topic_ranker(list(rows))
+    global _ranker_cache
+    fingerprint = _ranker_fingerprint(session)
+    # held while building, so concurrent requests wait for one build instead of each doing their own
+    with _ranker_lock:
+        if _ranker_cache is not None and _ranker_cache[0] == fingerprint:
+            return _ranker_cache[1]
+        rows = session.execute(select(TopicRow).options(selectinload(TopicRow.items))).scalars().all()
+        ranker = _topic_ranker(list(rows))
+        _ranker_cache = (fingerprint, ranker)
+        return ranker
 
 
 def _confident_topic_id(ranked: list[topic_suggestions.RankedTopic]) -> str | None:
@@ -1194,13 +1239,15 @@ def suggested_item_topics(
         uncategorized = next((row for row in rows if row.name == UNCATEGORIZED_TOPIC), None)
         if uncategorized is None or not uncategorized.items:
             return []
-        ranker = _topic_ranker(rows)
+        ranker = _load_topic_ranker(session)
         names = {row.id: (row.name, len(row.items)) for row in rows}
         embedded = [item_row for item_row in uncategorized.items if item_row.embedding is not None]
         items = [_item_from_row(item_row) for item_row in embedded]
         ranked = ranker.rank_many(
             [item_row.embedding for item_row in embedded], [item_row.description for item_row in embedded], candidates
         )
+        # the cached ranker can see a topic created/deleted after `rows` was read - skip ones not in `rows`
+        ranked = [[r for r in best if r.topic_id in names] for best in ranked]
 
     suggestions = [
         ItemTopicSuggestion(

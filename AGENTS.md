@@ -1,3 +1,9 @@
+@architecture.md
+
+# Documentation Rules
+- Whenever you introduce a new feature and/or update existing feature, update `README.md` to reflect the changes.
+- Keep the "Features" or "Changelog" section of `README.md` current before finishing a task.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
