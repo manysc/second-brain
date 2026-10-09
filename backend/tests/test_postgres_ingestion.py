@@ -148,7 +148,7 @@ def test_ingestion_is_idempotent(seeded_meetings):
     assert before == after
 
 
-def _reingest_fixtures(session) -> tuple[int, bool]:
+def _reingest_fixtures(session) -> ingest.IngestSummary:
     with mock_aws():
         client = boto3.client("s3", region_name="us-east-1")
         _upload_fixtures(client)
@@ -168,9 +168,10 @@ def test_reingesting_unchanged_meetings_skips_stored_items_and_reports_no_change
     embedded = _record_embeddings(monkeypatch)
     with db.get_session() as session:
         stored = {row.description for row in session.execute(select(KnowledgeItemRow)).scalars()}
-        count, changed = _reingest_fixtures(session)
-    assert count == 3
-    assert changed is False
+        summary = _reingest_fixtures(session)
+    assert summary.processed == 3
+    assert (summary.new, summary.updated, summary.unchanged) == (0, 0, 3)
+    assert summary.changed is False
     # only near-duplicates of another extract's items (never stored, so re-detected each run) may be embedded
     assert not stored & {text for batch in embedded for text in batch}
 
@@ -186,8 +187,25 @@ def test_reingesting_edited_description_reembeds_only_that_item(seeded_meetings,
 
     embedded = _record_embeddings(monkeypatch)
     with db.get_session() as session:
-        _, changed = _reingest_fixtures(session)
-    assert changed is True
+        summary = _reingest_fixtures(session)
+    assert summary.changed is True
+    assert (summary.new, summary.updated) == (0, 1)
     assert original in {text for batch in embedded for text in batch}
     with db.get_session() as session:
         assert session.get(KnowledgeItemRow, item_id).description == original
+
+
+def test_reingesting_reports_a_deleted_meeting_as_new(seeded_meetings):
+    meeting_id = Path(FILES[-1]).stem
+    with db.get_session() as session:
+        session.execute(delete(ReviewCandidateRow).where(ReviewCandidateRow.meeting_id == meeting_id))
+        session.execute(delete(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id == meeting_id))
+        session.execute(delete(MeetingRow).where(MeetingRow.id == meeting_id))
+        session.commit()
+
+    with db.get_session() as session:
+        summary = _reingest_fixtures(session)
+    assert summary.new == 1
+    assert summary.new + summary.updated + summary.unchanged == 3
+    with db.get_session() as session:
+        assert session.get(MeetingRow, meeting_id) is not None

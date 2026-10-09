@@ -63,16 +63,26 @@ the backend starts (in the FastAPI `lifespan` hook in `backend/app/main.py`, gat
 `INGEST_ON_STARTUP`), so restarting the server is enough to pick up new or changed extraction files.
 If SeaweedFS or Postgres is unreachable at startup, the failure is logged and the API still starts,
 serving whatever was already ingested. To re-ingest without restarting the server (or to disable the
-startup hook in `INGEST_ON_STARTUP=false` environments), run the same logic manually:
+startup hook in `INGEST_ON_STARTUP=false` environments), click **Ingest from SeaweedFS** at the top of
+`/meetings` (`IngestMeetingsButton` → `ingestMeetingsAction` → `POST /api/ingest`), or run the same
+logic from the command line:
 
 ```bash
 python scripts/ingest_to_postgres.py
 ```
 
-Both paths call the same `ingest.ingest_and_commit()`, which lists every object under `S3_PREFIX` in
+All three paths call the same `ingest.ingest_and_commit()`, which lists every object under `S3_PREFIX` in
 the bucket, parses each as a meeting extraction, embeds each `KnowledgeItem` description, and upserts
-meetings/items/topics/review candidates into Postgres. There is still no file watcher or webhook —
-ingestion only happens on backend startup or when the script is run explicitly. Re-running it is safe
+meetings/items/topics/review candidates into Postgres. It returns an `ingest.IngestSummary` that
+splits the distinct meetings it saw into **new** (not in Postgres before the run), **updated** (already
+there, but at least one meeting/item/review-candidate row was inserted or changed) and **unchanged**.
+`POST /api/ingest` returns `{"meetings": <total>, "new": n, "updated": n, "unchanged": n}`; it answers
+`409` while another run (including the startup one) is still in progress, `503` when SeaweedFS can't
+be reached, and `422` when an extract is malformed. The button shows the result inline (e.g.
+"2 new meetings, 1 updated · 64 checked" or "No new or changed meetings · 64 checked") and refreshes
+every page ingestion can change; the startup log and the CLI script print the same three numbers. There is still no
+file watcher or webhook — ingestion only happens on backend startup, from the button, or when the
+script is run explicitly. Re-running it is safe
 and idempotent: rows are keyed by the normalized `meeting_id:candidate_id` identity and upserted
 (`ON CONFLICT DO UPDATE`), and a human's review decision (`status`) is never clobbered by a re-ingest.
 A knowledge item's `topic_id` is likewise only assigned the first time that identity is seen, so

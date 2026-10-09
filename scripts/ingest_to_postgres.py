@@ -20,8 +20,11 @@ from app import db, ingest  # noqa: E402  (must follow load_dotenv/sys.path setu
 
 def main() -> None:
     db.init_db()
-    count = ingest.ingest_and_commit()
-    print(f"ingested {count} meeting(s) into postgres")
+    summary = ingest.ingest_and_commit()
+    print(
+        f"ingested into postgres: {summary.new} new, {summary.updated} updated, "
+        f"{summary.unchanged} unchanged meeting(s)"
+    )
 
 
 if __name__ == "__main__":

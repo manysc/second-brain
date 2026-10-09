@@ -16,6 +16,7 @@ import {
   deleteTopic,
   deleteTopicImage,
   deleteTopicNote,
+  ingestMeetings,
   mergeTopics,
   moveItemsTopic,
   moveItemTopic,
@@ -33,7 +34,7 @@ import {
   updateTopic,
   updateTopicNote,
 } from "./api";
-import type { ItemPatch } from "./api";
+import type { IngestResult, ItemPatch } from "./api";
 import { MAX_TAG_LENGTH } from "./domain";
 import type { ItemType, OpenClosed, TopicPriorityLevel } from "./domain";
 
@@ -170,6 +171,34 @@ export async function decideReviewCandidateAction(
   revalidatePath("/topics");
   revalidatePath("/meetings");
   return {};
+}
+
+// Returns instead of redirecting so IngestMeetingsButton can show the result inline. Ingestion can add
+// meetings, items, review candidates and topic proposals, and recalculates priorities, so most pages go stale.
+export async function ingestMeetingsAction(): Promise<{ error?: string; result?: IngestResult }> {
+  let result: IngestResult;
+  try {
+    result = await ingestMeetings();
+  } catch (err) {
+    return { error: errorMessage(err) };
+  }
+  for (const path of [
+    "/meetings",
+    "/dashboard",
+    "/items",
+    "/actions",
+    "/questions",
+    "/decisions",
+    "/topics",
+    "/review",
+    "/briefing",
+    "/graph",
+  ]) {
+    revalidatePath(path);
+  }
+  revalidatePath("/meetings/[id]", "page");
+  revalidatePath("/topics/[id]", "page");
+  return { result };
 }
 
 function revalidateAfterTopicProposal(): void {

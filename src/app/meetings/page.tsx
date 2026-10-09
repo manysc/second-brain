@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
+import { IngestMeetingsButton } from "@/components/IngestMeetingsButton";
 import { getMeetings } from "@/lib/api";
 
 function dateParts(date: string) {
@@ -21,6 +22,7 @@ export default async function Meetings() {
           <h1>Meeting archive</h1>
           <p className="lede">Every extracted signal, held close to its source.</p>
         </div>
+        <IngestMeetingsButton />
       </div>
       {meetings.map((meeting) => {
         const { day, month, year } = dateParts(meeting.date);

@@ -8,6 +8,7 @@ import json
 import re
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Iterable
@@ -608,34 +609,56 @@ def upsert_meeting(session: Session, meeting: Meeting) -> bool:
     return changed
 
 
-def _ingest_all(session: Session) -> tuple[int, bool]:
+@dataclass(frozen=True)
+class IngestSummary:
+    """What one ingestion run did. new/updated/unchanged count distinct meeting ids, so two LLM
+    extracts of the same meeting count once; `processed` counts every parsed (sub-)meeting."""
+
+    processed: int
+    new: int
+    updated: int
+    unchanged: int
+
+    @property
+    def changed(self) -> bool:
+        return bool(self.new or self.updated)
+
+
+def _ingest_all(session: Session) -> IngestSummary:
     keys = s3_store.list_extract_keys()
-    count = 0
-    changed = False
+    processed = 0
+    existed: dict[str, bool] = {}  # meeting id -> already in Postgres before this run
+    changed_ids: set[str] = set()
     # extracts are downloaded/parsed concurrently, but upserted sequentially in key order so topic
     # matching (which depends on what earlier extracts filed) stays deterministic
     with ThreadPoolExecutor(max_workers=min(8, len(keys) or 1)) as pool:
         for meetings in pool.map(parse_meetings_from_s3, keys):
             for meeting in meetings:
-                changed |= upsert_meeting(session, meeting)
-                count += 1
-    return count, changed
+                if meeting.id not in existed:
+                    # also warms the identity map for upsert_meeting's own session.get
+                    existed[meeting.id] = session.get(MeetingRow, meeting.id) is not None
+                if upsert_meeting(session, meeting):
+                    changed_ids.add(meeting.id)
+                processed += 1
+    new = sum(1 for present in existed.values() if not present)
+    updated = sum(1 for meeting_id, present in existed.items() if present and meeting_id in changed_ids)
+    return IngestSummary(processed=processed, new=new, updated=updated, unchanged=len(existed) - new - updated)
 
 
 def ingest_all_from_s3(session: Session) -> int:
-    return _ingest_all(session)[0]
+    return _ingest_all(session).processed
 
 
-def ingest_and_commit() -> int:
+def ingest_and_commit() -> IngestSummary:
     """Opens a session, ingests everything from S3, and commits. Shared by the FastAPI startup
-    hook and the manual scripts/ingest_to_postgres.py CLI entrypoint."""
+    hook, POST /api/ingest and the manual scripts/ingest_to_postgres.py CLI entrypoint."""
     with db.get_session() as session:
-        count, changed = _ingest_all(session)
+        summary = _ingest_all(session)
         session.commit()
-    if changed:
+    if summary.changed:
         # bulk load, not a fine-grained edit - recalculating every topic is the documented
         # exception to "recalculate only affected topics" (spec section 21)
         from app import data
 
         data.recalculate_all_topic_priorities(trigger="ingestion")
-    return count
+    return summary

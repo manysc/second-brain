@@ -1,5 +1,20 @@
 # Implementation status
 
+## Manual ingestion from SeaweedFS (2026-10-09)
+
+New extracts no longer need a backend restart to show up: `/meetings` has an **Ingest from SeaweedFS**
+button.
+
+- Backend: `POST /api/ingest` runs `ingest.ingest_and_commit()`, which now returns an `IngestSummary`
+  (distinct meetings split into new / updated / unchanged, plus the raw `processed` count), and
+  responds `{"meetings", "new", "updated", "unchanged"}`.
+  A `threading.Lock` (`main._ingest_lock`) is shared with the startup ingestion, so overlapping runs
+  get a `409` instead of racing on the near-duplicate check. Unreachable S3 is a `503` and a malformed
+  extract a `422`.
+- Frontend: `IngestMeetingsButton` (client component) calls `ingestMeetingsAction`, which returns
+  instead of redirecting and revalidates every page ingestion can change.
+- Tests: `backend/tests/test_ingest_endpoint.py` (stubs `ingest_and_commit`; needs neither Postgres nor S3).
+
 ## Topic images (2026-09-25)
 
 Users can add and remove images on a Topic. Bytes live in SeaweedFS under `images/topics/<topicId>/`

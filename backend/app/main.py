@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -55,14 +56,22 @@ logger = logging.getLogger(__name__)
 
 _INGEST_ATTEMPTS = 5
 
+# startup and manual (POST /api/ingest) runs must not overlap: two concurrent upserts of the same
+# extract race on upsert_meeting's near-duplicate check and can insert duplicate rows
+_ingest_lock = threading.Lock()
+
 
 def _run_startup_ingest() -> None:
     # SeaweedFS/network hiccups shouldn't stop the API from serving existing Postgres data
     delay = 3.0
     for attempt in range(1, _INGEST_ATTEMPTS + 1):
         try:
-            count = ingest.ingest_and_commit()
-            logger.info("startup ingestion: %d meeting(s)", count)
+            with _ingest_lock:
+                summary = ingest.ingest_and_commit()
+            logger.info(
+                "startup ingestion: %d new, %d updated, %d unchanged meeting(s)",
+                summary.new, summary.updated, summary.unchanged,
+            )
             return
         except (ConnectionClosedError, EndpointConnectionError) as exc:
             if attempt == _INGEST_ATTEMPTS:
@@ -109,6 +118,29 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
+
+
+@app.post("/api/ingest")
+def trigger_ingestion() -> dict[str, int]:
+    """Re-runs the startup ingestion on demand, so new extracts in SeaweedFS show up without a restart."""
+    if not _ingest_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Ingestion is already running")
+    try:
+        summary = ingest.ingest_and_commit()
+    except (ConnectionClosedError, EndpointConnectionError):
+        logger.exception("manual ingestion could not reach S3")
+        raise HTTPException(status_code=503, detail="Could not reach SeaweedFS")
+    except ValueError as exc:
+        # malformed extract (unrecognized shape, non-ISO meeting date, ...)
+        raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        _ingest_lock.release()
+    return {
+        "meetings": summary.new + summary.updated + summary.unchanged,
+        "new": summary.new,
+        "updated": summary.updated,
+        "unchanged": summary.unchanged,
+    }
 
 
 @app.get("/api/meetings", response_model=list[Meeting])

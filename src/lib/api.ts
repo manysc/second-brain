@@ -62,6 +62,14 @@ export function getMeetingById(id: string): Promise<Meeting> {
   return apiFetch<Meeting>(`/api/meetings/${encodeURIComponent(id)}`);
 }
 
+// counts distinct meetings; meetings = new + updated + unchanged
+export type IngestResult = { meetings: number; new: number; updated: number; unchanged: number };
+
+// same ingestion the backend runs on startup: pulls every extract from SeaweedFS into Postgres
+export function ingestMeetings(): Promise<IngestResult> {
+  return apiMutate<IngestResult>("/api/ingest", "POST");
+}
+
 export function getItems(type?: ItemType, priority?: TopicPriorityLevel): Promise<KnowledgeItem[]> {
   const params = new URLSearchParams();
   if (type) params.set("type", type);
