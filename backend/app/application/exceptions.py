@@ -7,7 +7,11 @@ class ApplicationError(Exception):
 
 
 class StorageUnavailable(ApplicationError):
-    """The database cannot be reached or is not configured."""
+    """The database cannot be reached."""
+
+
+class StorageNotConfigured(StorageUnavailable):
+    """The database connection has not been configured."""
 
 
 class ExtractSourceUnavailable(ApplicationError):

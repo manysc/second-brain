@@ -5,7 +5,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import TypeVar
 
-from mcp_server.errors import BrainError
+from app.presentation.mcp.errors import BrainError
 
 T = TypeVar("T")
 

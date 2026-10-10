@@ -3,11 +3,13 @@ import asyncio
 
 import pytest
 from mcp.client import Client
-from sqlalchemy.exc import OperationalError
 
-from mcp_server import service
-from mcp_server.config import load_config
-from mcp_server.server import create_server
+from app.application.exceptions import StorageUnavailable
+from app.application.use_cases.health import CheckStorageHealth
+from app.presentation.mcp import context, service
+from tests.mcp_tests import factories as f
+from app.presentation.mcp.config import load_config
+from app.presentation.mcp.server import create_server
 
 READ_TOOLS = {
     "brain_health", "brain_search_items", "brain_get_item", "brain_get_topic_context", "brain_get_relationship_graph",
@@ -146,7 +148,7 @@ def test_unexpected_failures_are_masked(monkeypatch):
 
 def test_dependency_failure_is_reported_as_dependency_unavailable(monkeypatch):
     def down(*args, **kwargs):
-        raise OperationalError("SELECT 1", {}, Exception("connection refused password=hunter2"))
+        raise StorageUnavailable("the database is unreachable") from Exception("connection refused password=hunter2")
 
     monkeypatch.setattr(service.Snapshot, "load", classmethod(lambda cls: down()))
 
@@ -159,13 +161,17 @@ def test_dependency_failure_is_reported_as_dependency_unavailable(monkeypatch):
 
 
 def test_health_degrades_instead_of_failing_and_hides_connection_details(monkeypatch):
-    from app import db
+    def broken_unit_of_work():
+        raise RuntimeError("postgresql://u:p@h/db")
 
-    monkeypatch.setattr(db, "get_session", lambda: (_ for _ in ()).throw(RuntimeError("postgresql://u:p@h/db")))
+    monkeypatch.setattr(
+        context, "_container", f.application(check_storage_health=CheckStorageHealth(broken_unit_of_work))
+    )
 
     async def scenario(client):
         return await client.call_tool("brain_health", {})
 
     result = run(scenario)
     assert not result.is_error and result.structured_content["status"] == "degraded"
+    assert result.structured_content["dataSource"] == {"database": "unavailable", "items": None, "error": "RuntimeError"}
     assert "postgresql" not in str(result.structured_content) and result.structured_content["capabilities"]["writesEnabled"] is False

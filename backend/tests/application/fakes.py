@@ -90,6 +90,9 @@ class _Items:
     def count_by_topic(self, topic_id):
         return sum(1 for i in self._s.items.values() if i.topic_id == topic_id)
 
+    def count_all(self):
+        return len(self._s.items)
+
     def topic_ids_of(self, item_ids):
         return [i.topic_id for i in self._s.items.values() if i.id in set(item_ids) and i.topic_id]
 

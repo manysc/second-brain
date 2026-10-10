@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, InterfaceError, OperationalError
 from sqlalchemy.orm import Session
 
+from app.application.exceptions import StorageNotConfigured, StorageUnavailable
 from app.domain.exceptions import TopicNameConflict
 from app.infrastructure.persistence import database
 from app.infrastructure.persistence.repositories import (
@@ -20,7 +21,9 @@ class SqlAlchemyUnitOfWork:
     committed by then is discarded.
 
     Given an existing session it joins that session instead: the repositories are usable right away and the
-    session's owner stays responsible for committing and closing it."""
+    session's owner stays responsible for committing and closing it.
+
+    Connectivity failures raised inside the block surface as StorageUnavailable / StorageNotConfigured."""
 
     meetings: SqlAlchemyMeetingRepository
     items: SqlAlchemyKnowledgeItemRepository
@@ -44,13 +47,21 @@ class SqlAlchemyUnitOfWork:
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         if self._owns_session:
-            self._bind(database.new_session())
+            try:
+                self._bind(database.new_session())
+            except RuntimeError as error:
+                if "DATABASE_URL" in str(error):
+                    raise StorageNotConfigured("the database connection is not configured") from error
+                raise
         return self
 
-    def __exit__(self, *exc_info: object) -> None:
+    def __exit__(self, exc_type: object, error: BaseException | None, traceback: object) -> None:
         if self._owns_session and self._session is not None:
             self._session.close()
             self._session = None
+        # technical failures leave this layer as application errors; the original stays attached as the cause
+        if isinstance(error, (OperationalError, InterfaceError)):
+            raise StorageUnavailable("the database is unreachable") from error
 
     def commit(self) -> None:
         assert self._session is not None, "commit() outside the unit of work"

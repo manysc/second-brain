@@ -17,6 +17,7 @@ from app.application.interfaces.services import (
 from app.application.services.priority_recalculation import PriorityRecalculator
 from app.application.services.topic_ranker_cache import TopicRankerCache
 from app.application.use_cases import (
+    health,
     ingestion,
     items,
     priority,
@@ -101,6 +102,9 @@ class Container:
 
     # ingestion
     ingest_extracts: ingestion.IngestExtracts
+
+    # operations
+    check_storage_health: health.CheckStorageHealth
 
 
 def build_container(
@@ -201,6 +205,7 @@ def build_container(
         accept_topic_proposal=review.AcceptTopicProposal(uow, ids, recalculator),
         reject_topic_proposal=review.RejectTopicProposal(uow),
         ingest_extracts=ingestion.IngestExtracts(uow, extract_source, embedder, ids, recalculator),
+        check_storage_health=health.CheckStorageHealth(uow),
     )
 
 

@@ -22,8 +22,8 @@ def openapi_document() -> dict[str, Any]:
 def mcp_catalog() -> dict[str, Any]:
     from mcp.client import Client
 
-    from mcp_server.config import load_config
-    from mcp_server.server import create_server
+    from app.presentation.mcp.config import load_config
+    from app.presentation.mcp.server import create_server
 
     async def go() -> dict[str, Any]:
         async with Client(create_server(load_config({}))) as client:

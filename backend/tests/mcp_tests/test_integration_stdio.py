@@ -16,13 +16,13 @@ from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 from mcp.shared.exceptions import MCPError
 
-from mcp_server.config import BACKEND_DIR
+from app.presentation.mcp.config import BACKEND_DIR
 
 
 def params(tmp_path, writes: bool) -> StdioServerParameters:
     env = {"PYTHONPATH": str(BACKEND_DIR), "BRAIN_MCP_ALLOW_WRITES": "true" if writes else "false"}
     # a foreign working directory proves the server does not depend on cwd
-    return StdioServerParameters(command=sys.executable, args=["-m", "mcp_server"], env=env, cwd=str(tmp_path))
+    return StdioServerParameters(command=sys.executable, args=["-m", "app.presentation.mcp"], env=env, cwd=str(tmp_path))
 
 
 class Session:
@@ -243,7 +243,7 @@ def test_stdout_carries_only_jsonrpc_and_shutdown_is_clean(synthetic, tmp_path):
     ids = synthetic
     env = {**__import__("os").environ, "PYTHONPATH": str(BACKEND_DIR), "BRAIN_MCP_ALLOW_WRITES": "false"}
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mcp_server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        [sys.executable, "-m", "app.presentation.mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", cwd=str(tmp_path), env=env,
     )
     out_q: "queue.Queue[str | None]" = queue.Queue()

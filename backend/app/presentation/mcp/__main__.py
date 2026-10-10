@@ -1,12 +1,14 @@
-"""Entry point: `python -m mcp_server`. stdout carries only MCP JSON-RPC; everything else goes to stderr."""
+"""Entry point and composition root: `python -m app.presentation.mcp`. stdout carries only MCP JSON-RPC;
+everything else goes to stderr."""
 import logging
 import sys
 import threading
 
 from dotenv import load_dotenv
 
-from mcp_server.config import BACKEND_DIR, ConfigError, load_config
-from mcp_server.errors import RedactingFilter
+from app.presentation.mcp import context
+from app.presentation.mcp.config import BACKEND_DIR, ConfigError, load_config
+from app.presentation.mcp.errors import RedactingFilter
 
 
 def _configure_logging() -> None:
@@ -23,9 +25,7 @@ def _warm_embeddings_in_background() -> None:
 
     def warm() -> None:
         try:
-            from app import embeddings
-
-            embeddings.embed_text("warm-up")
+            context.use_cases().embedder.embed_text("warm-up")
         except Exception as exc:  # warm-up is best effort
             logging.getLogger("brain_mcp").warning("embedding warm-up failed: %s", type(exc).__name__)
 
@@ -42,7 +42,10 @@ def main() -> int:
         print(f"brain-assistant MCP: {exc}", file=sys.stderr)
         return 2
 
-    from mcp_server.server import create_server
+    from app.container import get_container
+    from app.presentation.mcp.server import create_server
+
+    context.configure(get_container())
 
     logging.getLogger("brain_mcp").info("starting env=%s writes=%s", config.env, config.allow_writes)
     _warm_embeddings_in_background()

@@ -1,13 +1,13 @@
 """Unit tests: config, error mapping/redaction, pagination, write allowlist + guard."""
 import pytest
 from pydantic import ValidationError
-from sqlalchemy.exc import OperationalError
 
-from app import data
-from mcp_server import writes
-from mcp_server.config import ConfigError, load_config
-from mcp_server.errors import BrainError, map_exception, redact
-from mcp_server.pagination import decode_cursor, encode_cursor, paginate
+from app.application.exceptions import StorageNotConfigured, StorageUnavailable
+from app.domain import exceptions as domain
+from app.presentation.mcp import context, writes
+from app.presentation.mcp.config import ConfigError, load_config
+from app.presentation.mcp.errors import BrainError, map_exception, redact
+from app.presentation.mcp.pagination import decode_cursor, encode_cursor, paginate
 from tests.mcp_tests import factories as f
 
 
@@ -40,9 +40,22 @@ def test_config_rejects_bad_rate():
 def test_error_mapping_covers_expected_codes():
     assert map_exception(BrainError("NOT_FOUND", "x")).code == "NOT_FOUND"
     assert map_exception(ValueError("bad")).code == "VALIDATION_ERROR"
-    assert map_exception(data.TopicNameConflict()).code == "CONFLICT"
-    assert map_exception(OperationalError("SELECT 1", {}, Exception("password=hunter2"))).code == "DEPENDENCY_UNAVAILABLE"
-    assert map_exception(RuntimeError("DATABASE_URL is not set")).code == "DEPENDENCY_UNAVAILABLE"
+    assert map_exception(domain.TopicNameConflict()).code == "CONFLICT"
+    assert map_exception(domain.TopicHasItems(2)).code == "CONFLICT"
+    assert map_exception(domain.ReviewCandidateAlreadyDecided("c")).code == "CONFLICT"
+    unreachable = map_exception(StorageUnavailable("connection refused password=hunter2"))
+    assert unreachable.code == "DEPENDENCY_UNAVAILABLE" and "hunter2" not in str(unreachable)
+    assert "DATABASE_URL" in str(map_exception(StorageNotConfigured("no url")))
+    assert map_exception(StorageNotConfigured("no url")).code == "DEPENDENCY_UNAVAILABLE"
+
+
+def test_domain_errors_map_to_useful_codes():
+    assert str(map_exception(domain.ItemNotFound("m1:A-9"))).startswith("NOT_FOUND: Item 'm1:A-9' was not found")
+    assert str(map_exception(domain.TopicNotFound("t9"))).startswith("NOT_FOUND: Topic 't9' was not found")
+    not_editable = map_exception(domain.ItemNotEditable("The type of an item extracted from a meeting cannot be changed"))
+    assert (not_editable.code, not_editable.message) == (
+        "VALIDATION_ERROR", "The type of an item extracted from a meeting cannot be changed",
+    )
 
 
 def test_unknown_errors_never_leak_details():
@@ -103,14 +116,20 @@ class _Recorder:
     def __init__(self, monkeypatch, snapshot):
         self.calls: list[tuple] = []
         monkeypatch.setattr(writes.Snapshot, "load", classmethod(lambda cls: snapshot))
-        monkeypatch.setattr(writes.data, "set_item_status", lambda i, s: self.calls.append(("status", i, s)))
-        monkeypatch.setattr(writes.data, "set_item_priority_override", lambda i, p, r: self.calls.append(("priority", i, p, r)))
-        monkeypatch.setattr(writes.data, "assign_item_topic", lambda i, t: self.calls.append(("topic", i, t)))
-        monkeypatch.setattr(writes.data, "add_item_note", lambda i, b: self.calls.append(("note", i, b)) or f.item(i, notes=[]))
+        monkeypatch.setattr(
+            context,
+            "_container",
+            f.application(
+                set_item_status=lambda i, s: self.calls.append(("status", i, s)),
+                set_item_priority_override=lambda i, p, r: self.calls.append(("priority", i, p, r)),
+                assign_item_topic=lambda i, t: self.calls.append(("topic", i, t)),
+                add_item_note=lambda i, b: self.calls.append(("note", i, b)) or f.item(i, notes=[]),
+            ),
+        )
 
 
 def _snapshot():
-    from mcp_server.service import Snapshot
+    from app.presentation.mcp.service import Snapshot
 
     a = f.item("m1:A-1", status="Open", priority="MAJOR")
     return Snapshot(
@@ -195,7 +214,7 @@ def test_write_rate_limit():
 
 
 def test_agent_written_overrides_are_stamped_and_not_reported_as_human_confirmed(monkeypatch):
-    from mcp_server.service import override_provenance
+    from app.presentation.mcp.service import override_provenance
 
     rec = _Recorder(monkeypatch, _snapshot())
     patch = writes.ItemPatch.model_validate({"priorityOverride": "CRITICAL"})

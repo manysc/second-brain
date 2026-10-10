@@ -8,14 +8,18 @@ from typing import Annotated, Any, Literal
 
 import anyio.to_thread
 from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ResourceError, ResourceNotFoundError, ToolError
+from mcp.server.mcpserver.exceptions import (
+    ResourceError,
+    ResourceNotFoundError,
+    ToolError,
+)
 from mcp_types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import BaseModel, Field
 
-from mcp_server import service, writes
-from mcp_server.config import SERVER_NAME, SERVER_VERSION, Config
-from mcp_server.errors import BrainError, map_exception
-from mcp_server.pagination import DEFAULT_LIMIT, MAX_LIMIT
+from app.presentation.mcp import service, writes
+from app.presentation.mcp.config import SERVER_NAME, SERVER_VERSION, Config
+from app.presentation.mcp.errors import BrainError, map_exception
+from app.presentation.mcp.pagination import DEFAULT_LIMIT, MAX_LIMIT
 
 INSTRUCTIONS = (
     "Brain Assistant holds evidence-grounded knowledge extracted from meetings: ideas, decisions, actions, "
@@ -75,8 +79,8 @@ def _ids(rows: list[Any], attr: str = "id", cap: int = 8) -> str:
 
 
 def create_server(config: Config | None = None) -> MCPServer:
-    from mcp_server.config import load_config
-    from mcp_server.schemas import (
+    from app.presentation.mcp.config import load_config
+    from app.presentation.mcp.schemas import (
         ChangesOut,
         GraphOut,
         HealthOut,
@@ -126,10 +130,10 @@ def create_server(config: Config | None = None) -> MCPServer:
         statuses: Annotated[list[Literal["Open", "Closed"]] | None, Field(max_length=2)] = None,
         priorities: Annotated[list[Priority] | None, Field(max_length=3)] = None,
         owner: Owner | None = None,
-        topicId: TopicId | None = None,  # noqa: N803
-        meetingId: MeetingId | None = None,  # noqa: N803
-        fromDate: Annotated[date | None, Field(description="Inclusive meeting date, YYYY-MM-DD.")] = None,  # noqa: N803
-        toDate: Annotated[date | None, Field(description="Inclusive meeting date, YYYY-MM-DD.")] = None,  # noqa: N803
+        topicId: TopicId | None = None,
+        meetingId: MeetingId | None = None,
+        fromDate: Annotated[date | None, Field(description="Inclusive meeting date, YYYY-MM-DD.")] = None,
+        toDate: Annotated[date | None, Field(description="Inclusive meeting date, YYYY-MM-DD.")] = None,
         limit: Limit = DEFAULT_LIMIT,
         cursor: Cursor | None = None,
     ) -> SearchOut:
@@ -146,7 +150,7 @@ def create_server(config: Config | None = None) -> MCPServer:
         lambda r: f"{r.item.type} {r.item.id}: {r.item.title} [{r.item.status}]; {len(r.relationships)} relationships",
         READ_ONLY,
     )
-    def brain_get_item(itemId: ItemId) -> ItemDetailOut:  # noqa: N803
+    def brain_get_item(itemId: ItemId) -> ItemDetailOut:
         return service.get_item(itemId)
 
     @register(
@@ -159,10 +163,10 @@ def create_server(config: Config | None = None) -> MCPServer:
         READ_ONLY,
     )
     def brain_get_topic_context(
-        topicId: TopicId,  # noqa: N803
-        includeResolved: Annotated[bool, Field(description="Include Closed items.")] = False,  # noqa: N803
-        includeEvidence: Annotated[bool, Field(description="Include relationship evidence quotes.")] = True,  # noqa: N803
-        maxItemsPerType: Annotated[int, Field(ge=1, le=25)] = 5,  # noqa: N803
+        topicId: TopicId,
+        includeResolved: Annotated[bool, Field(description="Include Closed items.")] = False,
+        includeEvidence: Annotated[bool, Field(description="Include relationship evidence quotes.")] = True,
+        maxItemsPerType: Annotated[int, Field(ge=1, le=25)] = 5,
     ) -> TopicContextOut:
         return service.get_topic_context(topicId, includeResolved, includeEvidence, maxItemsPerType)
 
@@ -177,13 +181,13 @@ def create_server(config: Config | None = None) -> MCPServer:
         READ_ONLY,
     )
     def brain_get_relationship_graph(
-        rootItemId: ItemId | None = None,  # noqa: N803
-        topicId: TopicId | None = None,  # noqa: N803
+        rootItemId: ItemId | None = None,
+        topicId: TopicId | None = None,
         depth: Annotated[int, Field(ge=1, le=3, description="Hops from the root(s).")] = 1,
-        relationshipTypes: Annotated[list[Literal["related_to", "semantically_similar", "same_topic"]], Field(min_length=1, max_length=3)] = ["related_to", "semantically_similar"],  # noqa: B006,N803
-        itemTypes: Annotated[list[ItemKind] | None, Field(max_length=4)] = None,  # noqa: N803
-        maxNodes: Annotated[int, Field(ge=1, le=200)] = 50,  # noqa: N803
-        includeEvidence: bool = False,  # noqa: N803
+        relationshipTypes: Annotated[list[Literal["related_to", "semantically_similar", "same_topic"]], Field(min_length=1, max_length=3)] = ["related_to", "semantically_similar"],  # noqa: B006
+        itemTypes: Annotated[list[ItemKind] | None, Field(max_length=4)] = None,
+        maxNodes: Annotated[int, Field(ge=1, le=200)] = 50,
+        includeEvidence: bool = False,
         cursor: Cursor | None = None,
     ) -> GraphOut:
         return service.relationship_graph(rootItemId, topicId, depth, list(relationshipTypes), itemTypes, maxNodes, includeEvidence, cursor)
@@ -199,11 +203,11 @@ def create_server(config: Config | None = None) -> MCPServer:
     def brain_list_open_actions(
         owner: Owner | None = None,
         priority: Priority | None = None,
-        dueFrom: Annotated[date | None, Field(description="Inclusive due date, YYYY-MM-DD.")] = None,  # noqa: N803
-        dueTo: Annotated[date | None, Field(description="Inclusive due date, YYYY-MM-DD.")] = None,  # noqa: N803
-        overdueOnly: bool = False,  # noqa: N803
-        topicId: TopicId | None = None,  # noqa: N803
-        meetingId: MeetingId | None = None,  # noqa: N803
+        dueFrom: Annotated[date | None, Field(description="Inclusive due date, YYYY-MM-DD.")] = None,
+        dueTo: Annotated[date | None, Field(description="Inclusive due date, YYYY-MM-DD.")] = None,
+        overdueOnly: bool = False,
+        topicId: TopicId | None = None,
+        meetingId: MeetingId | None = None,
         limit: Limit = DEFAULT_LIMIT,
         cursor: Cursor | None = None,
     ) -> WorkListOut:
@@ -222,8 +226,8 @@ def create_server(config: Config | None = None) -> MCPServer:
     def brain_list_unresolved_questions(
         owner: Owner | None = None,
         priority: Priority | None = None,
-        topicId: TopicId | None = None,  # noqa: N803
-        meetingId: MeetingId | None = None,  # noqa: N803
+        topicId: TopicId | None = None,
+        meetingId: MeetingId | None = None,
         limit: Limit = DEFAULT_LIMIT,
         cursor: Cursor | None = None,
     ) -> WorkListOut:
@@ -241,7 +245,7 @@ def create_server(config: Config | None = None) -> MCPServer:
     def brain_get_recent_changes(
         since: Annotated[datetime | None, Field(description="ISO date or datetime (UTC if no zone). Default: 7 days before until.")] = None,
         until: Annotated[datetime | None, Field(description="ISO date or datetime. Default: now.")] = None,
-        topicId: TopicId | None = None,  # noqa: N803
+        topicId: TopicId | None = None,
         types: Annotated[list[Literal["IDEA", "DECISION", "ACTION", "QUESTION", "TOPIC"]] | None, Field(max_length=5)] = None,
         limit: Limit = DEFAULT_LIMIT,
         cursor: Cursor | None = None,
@@ -262,11 +266,11 @@ def create_server(config: Config | None = None) -> MCPServer:
         ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False),
     )
     def brain_update_item(
-        itemId: ItemId,  # noqa: N803
+        itemId: ItemId,
         patch: writes.ItemPatch,
         reason: Annotated[str, Field(min_length=5, max_length=500, description="Why this change is being made.")],
         provenance: Provenance,
-        expectedCurrent: writes.ExpectedCurrent | None = None,  # noqa: N803
+        expectedCurrent: writes.ExpectedCurrent | None = None,
     ) -> WriteOut:
         return writes.update_item(guard, itemId, patch, expectedCurrent, reason, provenance)
 
@@ -279,7 +283,7 @@ def create_server(config: Config | None = None) -> MCPServer:
         ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False),
     )
     def brain_add_note(
-        itemId: ItemId,  # noqa: N803
+        itemId: ItemId,
         body: Annotated[str, Field(min_length=1, max_length=10000)],
         provenance: Provenance,
     ) -> WriteOut:
@@ -295,12 +299,12 @@ def create_server(config: Config | None = None) -> MCPServer:
         ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False),
     )
     def brain_add_item(
-        topicId: TopicId,  # noqa: N803
-        type: ItemKind,  # noqa: A002
+        topicId: TopicId,
+        type: ItemKind,
         description: Annotated[str, Field(min_length=1, max_length=2000)],
         provenance: Provenance,
         owner: Annotated[str, Field(max_length=200)] | None = None,
-        dueDate: Annotated[str, Field(max_length=50)] | None = None,  # noqa: N803
+        dueDate: Annotated[str, Field(max_length=50)] | None = None,
         rationale: Annotated[str, Field(max_length=2000)] | None = None,
     ) -> WriteOut:
         return writes.create_item(guard, topicId, type, description, owner, dueDate, rationale, provenance)
@@ -316,11 +320,11 @@ def create_server(config: Config | None = None) -> MCPServer:
         ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False),
     )
     def brain_edit_item(
-        itemId: ItemId,  # noqa: N803
+        itemId: ItemId,
         patch: writes.ItemEditPatch,
         reason: Annotated[str, Field(min_length=5, max_length=500, description="Why this change is being made.")],
         provenance: Provenance,
-        expectedCurrent: writes.ExpectedCurrent | None = None,  # noqa: N803
+        expectedCurrent: writes.ExpectedCurrent | None = None,
     ) -> WriteOut:
         return writes.edit_item(guard, itemId, patch, expectedCurrent, reason, provenance)
 
@@ -334,7 +338,7 @@ def create_server(config: Config | None = None) -> MCPServer:
         ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False),
     )
     def brain_delete_item(
-        itemId: ItemId,  # noqa: N803
+        itemId: ItemId,
         reason: Annotated[str, Field(min_length=5, max_length=500, description="Why this item is being deleted.")],
         provenance: Provenance,
     ) -> WriteOut:
@@ -353,15 +357,15 @@ def create_server(config: Config | None = None) -> MCPServer:
             raise ResourceError(str(map_exception(exc))) from None
 
     @server.resource("brain://items/{itemId}", name="item", description="Full context for one item (same as brain_get_item).", mime_type="application/json")
-    def item_resource(itemId: str) -> str:  # noqa: N803
+    def item_resource(itemId: str) -> str:
         return _resource(lambda: service.get_item(itemId).model_dump(mode="json", by_alias=True))
 
     @server.resource("brain://topics/{topicId}/context", name="topic-context", description="Topic briefing (same as brain_get_topic_context with defaults).", mime_type="application/json")
-    def topic_resource(topicId: str) -> str:  # noqa: N803
+    def topic_resource(topicId: str) -> str:
         return _resource(lambda: service.get_topic_context(topicId, False, True, 5).model_dump(mode="json", by_alias=True))
 
     @server.resource("brain://meetings/{meetingId}/summary", name="meeting-summary", description="Items recorded in one meeting.", mime_type="application/json")
-    def meeting_resource(meetingId: str) -> str:  # noqa: N803
+    def meeting_resource(meetingId: str) -> str:
         return _resource(lambda: service.get_meeting_summary(meetingId))
 
     _forbid_unknown_arguments(server)
@@ -370,7 +374,7 @@ def create_server(config: Config | None = None) -> MCPServer:
 
 def _forbid_unknown_arguments(server: MCPServer) -> None:
     """The SDK ignores unknown top-level arguments by default; the contract here is to reject them."""
-    for tool in server._tool_manager.list_tools():  # noqa: SLF001
+    for tool in server._tool_manager.list_tools():
         model = tool.fn_metadata.arg_model
         model.model_config["extra"] = "forbid"
         model.model_rebuild(force=True)

@@ -1,18 +1,22 @@
-"""Read-side operations. Every fact comes from app.data; this module only shapes, filters and bounds it."""
+"""Read-side operations. Every fact comes from an application use case; this module only shapes, filters and
+bounds it for an MCP client."""
 import re
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import text
-
-from app import data, db, topic_priority
-from app.models import KnowledgeItem, Meeting, Topic, TopicPriorityHistoryEntry
-from mcp_server.config import SERVER_NAME, SERVER_VERSION, Config
-from mcp_server.errors import BrainError, not_found
-from mcp_server.pagination import paginate
-from mcp_server.schemas import (
+from app.application.dtos import KnowledgeItemDTO as KnowledgeItem
+from app.application.dtos import MeetingDTO as Meeting
+from app.application.dtos import TopicDTO as Topic
+from app.domain.value_objects.dates import parse_iso_date
+from app.domain.value_objects.priority import TopicPriorityHistoryEntry
+from app.domain.value_objects.status import is_resolved_status
+from app.presentation.mcp.config import SERVER_NAME, SERVER_VERSION, Config
+from app.presentation.mcp.context import use_cases
+from app.presentation.mcp.errors import BrainError, not_found
+from app.presentation.mcp.pagination import paginate
+from app.presentation.mcp.schemas import (
     ChangeOut,
     ChangesOut,
     EvidenceOut,
@@ -36,7 +40,7 @@ from mcp_server.schemas import (
     WorkListOut,
 )
 
-SEARCH_POOL = 100  # data.search always fetches this many nearest items so pagination is stable
+SEARCH_POOL = 100  # semantic search always fetches this many nearest items so pagination is stable
 TRAVERSAL_CAP = 400  # hard ceiling on nodes visited by one graph call
 MAX_CHANGE_WINDOW_DAYS = 90
 _PRIORITY_RANK = {"CRITICAL": 0, "MAJOR": 1, "MINOR": 2}
@@ -77,7 +81,7 @@ def _parse_dt(value: str | None) -> datetime | None:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        day = topic_priority.parse_iso_date(value)
+        day = parse_iso_date(value)
         if day is None:
             return None
         parsed = datetime(day.year, day.month, day.day)
@@ -137,8 +141,9 @@ class Snapshot:
 
     @classmethod
     def load(cls) -> "Snapshot":
-        meetings = data.load_meetings()
-        return cls(meetings=meetings, topics=data.all_topics(), items=data.all_items(meetings))
+        app = use_cases()
+        meetings = app.list_meetings()
+        return cls(meetings=meetings, topics=app.list_topics(), items=[i for m in meetings for i in m.items])
 
     def relationship_count(self, item_id: str) -> int:
         return len(set(self.outgoing.get(item_id, [])) | set(self.incoming.get(item_id, [])))
@@ -264,6 +269,10 @@ def meeting_summary(meeting: Meeting) -> ItemSummary:
     )
 
 
+def _priority_history(topic_id: str) -> list[TopicPriorityHistoryEntry]:
+    return use_cases().get_priority_history(topic_id, require_topic=False)
+
+
 def _history_out(entry: TopicPriorityHistoryEntry) -> HistoryOut:
     prev = entry.previous_priority or "none"
     drivers = "; ".join(entry.primary_drivers[:3])
@@ -283,11 +292,12 @@ def health(config: Config) -> HealthOut:
     source: dict[str, str | int | None] = {"database": "unavailable", "items": None}
     status = "degraded"
     try:
-        with db.get_session() as session:
-            session.execute(text("SELECT 1"))
-            count = session.execute(text("SELECT count(*) FROM knowledge_items")).scalar_one()
-        source = {"database": "ok", "items": int(count)}
-        status = "ok"
+        storage = use_cases().check_storage_health()
+        if storage.reachable:
+            source = {"database": "ok", "items": storage.item_count}
+            status = "ok"
+        else:
+            source["error"] = storage.error
     except Exception as exc:  # health must report, never raise, and never echo connection details
         source["error"] = type(exc).__name__
     write_tools = WRITE_TOOLS if config.allow_writes else []
@@ -338,7 +348,8 @@ def search_items(
         return day is not None and (from_date is None or day >= from_date) and (to_date is None or day <= to_date)
 
     if query:
-        found_items, found_topics = data.search(query, limit=SEARCH_POOL)
+        found = use_cases().search(query, limit=SEARCH_POOL)
+        found_items, found_topics = found.items, found.topics
         ordered_items = [snap.item_by_id[i.id] for i in found_items if i.id in snap.item_by_id]
         ordered_topics = [snap.topic_by_id[t.id] for t in found_topics if t.id in snap.topic_by_id]
         ordered_meetings = [m for m in snap.meetings if query.lower() in m.title.lower()]
@@ -432,7 +443,7 @@ def _relationships(snap: Snapshot, item: KnowledgeItem, include_similar: bool) -
             )
         )
     if include_similar:
-        for similar in data.semantic_similar_items(item):
+        for similar in use_cases().find_similar_items(item):
             if similar.id in snap.item_by_id:
                 out.append(
                     RelationshipOut(
@@ -462,7 +473,7 @@ def get_item(item_id: str) -> ItemDetailOut:
             )
         )
     if topic:
-        history.extend(_history_out(e) for e in data.get_priority_history(topic.id)[:5])
+        history.extend(_history_out(e) for e in _priority_history(topic.id)[:5])
     override = None
     if item.manual_override:
         override = OverrideOut(
@@ -518,7 +529,7 @@ def get_topic_context(topic_id: str, include_resolved: bool, include_evidence: b
     follow_ups = [
         item_summary(snap, i)
         for i in sorted(topic.items, key=lambda i: (i.type, i.id))
-        if i.type in ("QUESTION", "ACTION") and not topic_priority.is_resolved_status(i.status)
+        if i.type in ("QUESTION", "ACTION") and not is_resolved_status(i.status)
     ][:max_items_per_type]
 
     ids = {i.id for i in topic.items}
@@ -550,14 +561,14 @@ def get_topic_context(topic_id: str, include_resolved: bool, include_evidence: b
             for s in sorted(topic.priority.signals, key=lambda s: (-s.weighted_score, s.type))[:3]
             if s.weighted_score > 0
         )
-    related = data.related_topics(topic.id) or []
+    related = use_cases().get_related_topics(topic.id)
     open_counts = {t: sum(1 for i in topic.items if i.type == t and i.status != "Closed") for t in ("IDEA", "DECISION", "ACTION", "QUESTION")}
     summary = (
         f"Topic '{topic.name}' ({topic.status}) has {len(topic.items)} items across {len(meetings)} meeting(s); "
         f"open: {open_counts['ACTION']} actions, {open_counts['QUESTION']} questions, "
         f"{open_counts['DECISION']} decisions, {open_counts['IDEA']} ideas."
     )
-    recent = [_history_out(e) for e in data.get_priority_history(topic.id)[:5]]
+    recent = [_history_out(e) for e in _priority_history(topic.id)[:5]]
     recent.extend(
         HistoryOut(changed_at=n.created_at, summary="Topic note added", scope="topic", provenance="retrieved")
         for n in topic.notes[-3:]
@@ -623,7 +634,7 @@ def relationship_graph(
     wanted_types = set(item_types or ["IDEA", "DECISION", "ACTION", "QUESTION"])
     wanted_rel = set(relationship_types)
 
-    graph = data.build_graph()
+    graph = use_cases().build_graph()
     adjacency: dict[str, list[tuple[str, str, str, float]]] = {}
     edge_rows: list[tuple[str, str, str, float]] = []
 
@@ -721,7 +732,7 @@ def _work_item(snap: Snapshot, item: KnowledgeItem, today: date, related_kinds: 
     base = item_summary(snap, item).model_dump()
     due_state = "not_applicable"
     if item.type == "ACTION":
-        due = topic_priority.parse_iso_date(item.due_date) if item.due_date else None
+        due = parse_iso_date(item.due_date) if item.due_date else None
         if due is None:
             due_state = "undated"
         elif due < today:
@@ -771,11 +782,11 @@ def list_open_actions(
         raise not_found("Meeting", meeting_id)
     rows: list[tuple[date, int, str, KnowledgeItem]] = []
     for item in snap.items:
-        if item.type != "ACTION" or topic_priority.is_resolved_status(item.status):
+        if item.type != "ACTION" or is_resolved_status(item.status):
             continue
         if not _common_filters(snap, item, owner, priority, topic_id, meeting_id):
             continue
-        due = topic_priority.parse_iso_date(item.due_date) if item.due_date else None
+        due = parse_iso_date(item.due_date) if item.due_date else None
         if overdue_only and (due is None or due >= today):
             continue
         if (due_from or due_to) and (due is None or (due_from and due < due_from) or (due_to and due > due_to)):
@@ -808,7 +819,7 @@ def list_unresolved_questions(
         raise not_found("Meeting", meeting_id)
     rows = []
     for item in snap.items:
-        if item.type != "QUESTION" or topic_priority.is_resolved_status(item.status):
+        if item.type != "QUESTION" or is_resolved_status(item.status):
             continue
         if not _common_filters(snap, item, owner, priority, topic_id, meeting_id):
             continue
@@ -874,7 +885,7 @@ def recent_changes(
         for topic in snap.topics:
             if topic_id and topic.id != topic_id:
                 continue
-            for entry in data.get_priority_history(topic.id):
+            for entry in _priority_history(topic.id):
                 if within(entry.changed_at):
                     hist = _history_out(entry)
                     changes.append(ChangeOut(at=entry.changed_at, kind="topic_priority_changed", record=Ref(id=topic.id, name=topic.name),

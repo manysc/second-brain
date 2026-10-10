@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
+BACKEND_DIR = Path(__file__).resolve().parents[3]  # backend/app/presentation/mcp/config.py -> backend
 
 SERVER_NAME = "brain-assistant"
 SERVER_VERSION = "0.1.0"

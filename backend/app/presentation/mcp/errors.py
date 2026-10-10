@@ -4,9 +4,9 @@ import re
 from typing import Literal
 
 from pydantic import ValidationError
-from sqlalchemy.exc import InterfaceError, OperationalError
 
-from app import data
+from app.application.exceptions import StorageNotConfigured, StorageUnavailable
+from app.domain import exceptions as domain
 
 ErrorCode = Literal[
     "NOT_FOUND",
@@ -62,18 +62,24 @@ def map_exception(exc: BaseException) -> BrainError:
     """Turns any exception into a BrainError without leaking SQL, paths, stack traces or secrets."""
     if isinstance(exc, BrainError):
         return exc
-    if isinstance(exc, (data.TopicNameConflict, data.ReviewCandidateAlreadyDecided, data.TopicHasItems)):
+    if isinstance(exc, (domain.TopicNameConflict, domain.ReviewCandidateAlreadyDecided, domain.TopicHasItems)):
         return BrainError("CONFLICT", "The operation conflicts with the current state of the record.")
+    if isinstance(exc, domain.TopicNotFound):
+        return not_found("Topic", exc.topic_id or "")
+    if isinstance(exc, domain.ItemNotFound):
+        return not_found("Item", exc.item_id or "")
+    if isinstance(exc, (domain.ItemNotEditable, domain.ItemsNotFound, domain.InvalidTopicMerge, domain.InvalidTopicName)):
+        return BrainError("VALIDATION_ERROR", redact(str(exc))[:300] or "Invalid input.")
     if isinstance(exc, ValidationError):
         # loc + message only: pydantic's default text echoes input values
         details = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'input'}: {e['msg']}" for e in exc.errors()[:3])
         return BrainError("VALIDATION_ERROR", details[:300])
     if isinstance(exc, ValueError):
         return BrainError("VALIDATION_ERROR", redact(str(exc))[:300] or "Invalid input.")
-    if isinstance(exc, (OperationalError, InterfaceError)):
-        return BrainError("DEPENDENCY_UNAVAILABLE", "The Brain Assistant database is unreachable. Is Postgres running?")
-    if isinstance(exc, RuntimeError) and "DATABASE_URL" in str(exc):
+    if isinstance(exc, StorageNotConfigured):
         return BrainError("DEPENDENCY_UNAVAILABLE", "DATABASE_URL is not configured for the MCP server.")
+    if isinstance(exc, StorageUnavailable):
+        return BrainError("DEPENDENCY_UNAVAILABLE", "The Brain Assistant database is unreachable. Is Postgres running?")
     # unknown: log only the type; the message may contain SQL or data
     logger.error("unexpected %s in tool call", type(exc).__name__)
     return BrainError("INTERNAL_ERROR", "Unexpected server error. See the MCP server's stderr log.")

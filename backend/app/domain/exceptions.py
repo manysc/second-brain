@@ -55,9 +55,7 @@ class ItemsNotFound(DomainError):
         self.missing = missing
 
 
-# ValueError stays a base until the MCP adapter maps this class explicitly (it reports ValueError as a
-# validation error today).
-class ItemNotEditable(DomainError, ValueError):
+class ItemNotEditable(DomainError):
     """An edit touches a field that is fixed for meeting-extracted items."""
 
 

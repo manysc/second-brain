@@ -119,6 +119,9 @@ class SqlAlchemyKnowledgeItemRepository:
         stmt = select(func.count()).select_from(KnowledgeItemRow).where(KnowledgeItemRow.topic_id == topic_id)
         return self._session.execute(stmt).scalar_one()
 
+    def count_all(self) -> int:
+        return self._session.execute(select(func.count()).select_from(KnowledgeItemRow)).scalar_one()
+
     def topic_ids_of(self, item_ids: Sequence[str]) -> list[str]:
         stmt = select(KnowledgeItemRow.topic_id).where(
             KnowledgeItemRow.id.in_(list(item_ids)), KnowledgeItemRow.topic_id.is_not(None)

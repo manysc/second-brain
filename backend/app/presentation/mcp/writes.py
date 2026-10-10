@@ -1,4 +1,4 @@
-"""Controlled writes. Each one goes through an existing app.data function; nothing here touches the DB directly."""
+"""Controlled writes. Each one goes through an application use case; nothing here touches storage directly."""
 import logging
 import threading
 import time
@@ -7,12 +7,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app import data
-from app.models import ItemCreate, ItemUpdate, NoteCreate
-from mcp_server.config import Config
-from mcp_server.errors import BrainError, not_found
-from mcp_server.schemas import AuditOut, WriteOut
-from mcp_server.service import Snapshot, item_summary
+from app.application.dtos import NewItem
+from app.domain.entities.knowledge_item import ItemEdit
+from app.domain.exceptions import ItemNotDeletable, ItemNotFound, TopicNotFound
+from app.presentation.api.schemas import ItemCreate, ItemUpdate, NoteCreate
+from app.presentation.mcp.config import Config
+from app.presentation.mcp.context import use_cases
+from app.presentation.mcp.errors import BrainError, not_found
+from app.presentation.mcp.schemas import AuditOut, WriteOut
+from app.presentation.mcp.service import Snapshot, item_summary
 
 audit_log = logging.getLogger("brain_mcp.audit")
 
@@ -141,14 +144,14 @@ def update_item(guard: WriteGuard, item_id: str, patch: ItemPatch, expected: Exp
 
         applied: list[str] = []
         if patch.status is not None and patch.status != item.status:
-            data.set_item_status(item_id, patch.status)
+            use_cases().set_item_status(item_id, patch.status)
             applied.append("status")
         if patch.priority_override is not None:
             override = None if patch.priority_override == "CLEAR" else patch.priority_override
-            data.set_item_priority_override(item_id, override, f"{AGENT_REASON_PREFIX}{actor}] {reason.strip()}" if override else None)
+            use_cases().set_item_priority_override(item_id, override, f"{AGENT_REASON_PREFIX}{actor}] {reason.strip()}" if override else None)
             applied.append("priorityOverride")
         if patch.topic_id is not None and patch.topic_id != getattr(snap.topic_of_item.get(item_id), "id", None):
-            data.assign_item_topic(item_id, patch.topic_id)
+            use_cases().assign_item_topic(item_id, patch.topic_id)
             applied.append("topicId")
 
         fresh = Snapshot.load()
@@ -170,9 +173,19 @@ def create_item(
     payload = ItemCreate(type=kind, description=description, owner=owner, dueDate=due_date, rationale=rationale)
     with _write_lock:
         Snapshot.load().topic_or_404(topic_id)
-        created = data.create_item(topic_id, payload)
-        if created is None:
-            raise not_found("Topic", topic_id)
+        try:
+            created = use_cases().create_item(
+                topic_id,
+                NewItem(
+                    type=payload.type,
+                    description=payload.description,
+                    owner=payload.owner,
+                    due_date=payload.due_date,
+                    rationale=payload.rationale,
+                ),
+            )
+        except TopicNotFound:
+            raise not_found("Topic", topic_id) from None
         fresh = Snapshot.load()
         audit = _audit(actor, "brain_add_item", created.id, ["created"], provenance, None)
         return WriteOut(item=item_summary(fresh, fresh.item_or_404(created.id)), applied=["created"], audit=audit)
@@ -208,9 +221,20 @@ def edit_item(
                         f"{key} is now {current[key]!r}, not {value!r}. Re-read the item with brain_get_item and retry.",
                     )
 
-        after = data.update_item(item_id, update)
-        if after is None:
-            raise not_found("Item", item_id)
+        try:
+            after = use_cases().update_item(
+                item_id,
+                ItemEdit(
+                    fields=frozenset(update.model_fields_set),
+                    type=update.type,
+                    description=update.description,
+                    owner=update.owner,
+                    due_date=update.due_date,
+                    rationale=update.rationale,
+                ),
+            )
+        except ItemNotFound:
+            raise not_found("Item", item_id) from None
         applied = [
             name
             for name, old, new in (
@@ -236,14 +260,14 @@ def delete_item(guard: WriteGuard, item_id: str, reason: str, provenance: str) -
         before = snap.item_or_404(item_id)
         summary = item_summary(snap, before)  # captured first: the record is gone afterwards
         try:
-            deleted = data.delete_item(item_id)
-        except data.ItemNotDeletable:
+            use_cases().delete_item(item_id)
+        except ItemNotFound:
+            raise not_found("Item", item_id) from None
+        except ItemNotDeletable:
             raise BrainError(
                 "FORBIDDEN",
                 "Only manually added items can be deleted; items extracted from meetings would be re-created by the next ingest.",
             ) from None
-        if not deleted:
-            raise not_found("Item", item_id)
         audit = _audit(actor, "brain_delete_item", item_id, ["deleted"], provenance, reason)
         return WriteOut(item=summary, applied=["deleted"], audit=audit)
 
@@ -257,9 +281,10 @@ def add_note(guard: WriteGuard, item_id: str, body: str, provenance: str) -> Wri
     stamped = f"{clean}\n\n[Added via Brain MCP by {actor}; source: {provenance}]"
     with _write_lock:
         Snapshot.load().item_or_404(item_id)
-        result = data.add_item_note(item_id, stamped)
-        if result is None:
-            raise not_found("Item", item_id)
+        try:
+            result = use_cases().add_item_note(item_id, stamped)
+        except ItemNotFound:
+            raise not_found("Item", item_id) from None
         fresh = Snapshot.load()
         audit = _audit(actor, "brain_add_note", item_id, ["notes"], provenance, None)
         return WriteOut(
