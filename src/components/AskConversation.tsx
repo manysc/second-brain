@@ -18,14 +18,14 @@ const MAX_CONVERSATION_TURNS = 20;
 
 // Effort options are never hardcoded: they come from the live "default" model entry (or the union
 // of whatever models are known) so the picker always reflects what the connected account actually supports.
-function effortLevelsFor(model: ModelInfo | undefined, allModels: ModelInfo[]): EffortLevel[] {
+export function effortLevelsFor(model: ModelInfo | undefined, allModels: ModelInfo[]): EffortLevel[] {
   if (model) return model.supportedEffortLevels ?? [];
   const defaultEntry = allModels.find((m) => m.value === "default");
   if (defaultEntry) return defaultEntry.supportedEffortLevels ?? [];
   return Array.from(new Set(allModels.flatMap((m) => m.supportedEffortLevels ?? [])));
 }
 
-function timeAgo(timestamp: number): string {
+export function timeAgo(timestamp: number): string {
   const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000));
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
@@ -38,13 +38,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CITATION = /\[([A-Za-z0-9_.:-]{1,200})\]/g;
 
 // Record IDs are UUIDs for topics and "<meetingId>:<key>" for items; anything else is shown unlinked.
-function citationHref(id: string): string | null {
+export function citationHref(id: string): string | null {
   if (UUID.test(id)) return `/topics/${id}`;
   const meetingId = id.includes(":") ? id.split(":", 1)[0] : null;
   return meetingId ? `/meetings/${encodeURIComponent(meetingId)}` : null;
 }
 
-function withCitations(text: string): ReactNode[] {
+export function withCitations(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   let last = 0;
   for (const match of text.matchAll(CITATION)) {

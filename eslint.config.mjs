@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // not app code: the Python virtualenv ships vendored JS, and Playwright writes traces/reports
+    "backend/**",
+    "test-results/**",
+    "playwright-report/**",
   ]),
 ]);
 

@@ -1,0 +1,3877 @@
+{
+  "components": {
+    "schemas": {
+      "Body_add_topic_image_api_topics__topic_id__images_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_add_topic_image_api_topics__topic_id__images_post",
+        "type": "object"
+      },
+      "Evidence": {
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "quote": {
+            "default": "",
+            "title": "Quote",
+            "type": "string"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "title": "Evidence",
+        "type": "object"
+      },
+      "FollowUpRelatedItem": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/KnowledgeItem"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "topicId": {
+            "title": "Topicid",
+            "type": "string"
+          },
+          "topicName": {
+            "title": "Topicname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "topicId",
+          "topicName",
+          "reason"
+        ],
+        "title": "FollowUpRelatedItem",
+        "type": "object"
+      },
+      "FollowUpResponse": {
+        "properties": {
+          "generatedAt": {
+            "title": "Generatedat",
+            "type": "string"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/FollowUpTopic"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "topics",
+          "generatedAt"
+        ],
+        "title": "FollowUpResponse",
+        "type": "object"
+      },
+      "FollowUpTopic": {
+        "properties": {
+          "escalatedRecently": {
+            "title": "Escalatedrecently",
+            "type": "boolean"
+          },
+          "escalationDrivers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Escalationdrivers",
+            "type": "array"
+          },
+          "followUpItems": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeItem"
+            },
+            "title": "Followupitems",
+            "type": "array"
+          },
+          "relatedFromOtherTopics": {
+            "items": {
+              "$ref": "#/components/schemas/FollowUpRelatedItem"
+            },
+            "title": "Relatedfromothertopics",
+            "type": "array"
+          },
+          "topic": {
+            "$ref": "#/components/schemas/Topic"
+          }
+        },
+        "required": [
+          "topic",
+          "escalatedRecently"
+        ],
+        "title": "FollowUpTopic",
+        "type": "object"
+      },
+      "GraphData": {
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/GraphEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/GraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "topicLinks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TopicLink"
+            },
+            "title": "Topiclinks",
+            "type": "array"
+          },
+          "topics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphTopic"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "GraphData",
+        "type": "object"
+      },
+      "GraphEdge": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "related",
+              "topic",
+              "semantic"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "weight": {
+            "default": 1.0,
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "kind"
+        ],
+        "title": "GraphEdge",
+        "type": "object"
+      },
+      "GraphNode": {
+        "properties": {
+          "confidence": {
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "meetingId": {
+            "title": "Meetingid",
+            "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CRITICAL",
+                  "MAJOR",
+                  "MINOR"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "topicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topicid"
+          },
+          "topicName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topicname"
+          },
+          "type": {
+            "enum": [
+              "IDEA",
+              "DECISION",
+              "ACTION",
+              "QUESTION"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "description",
+          "confidence",
+          "meetingId"
+        ],
+        "title": "GraphNode",
+        "type": "object"
+      },
+      "GraphTopic": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "itemCount": {
+            "title": "Itemcount",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "itemCount"
+        ],
+        "title": "GraphTopic",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HardEscalation": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "ruleId": {
+            "title": "Ruleid",
+            "type": "string"
+          },
+          "sourceKnowledgeItemIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sourceknowledgeitemids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ruleId",
+          "reason"
+        ],
+        "title": "HardEscalation",
+        "type": "object"
+      },
+      "ItemCreate": {
+        "properties": {
+          "description": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedate"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "type": {
+            "enum": [
+              "IDEA",
+              "DECISION",
+              "ACTION",
+              "QUESTION"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "description"
+        ],
+        "title": "ItemCreate",
+        "type": "object"
+      },
+      "ItemDetail": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/KnowledgeItem"
+          },
+          "related": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeItem"
+            },
+            "title": "Related",
+            "type": "array"
+          },
+          "similar": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeItem"
+            },
+            "title": "Similar",
+            "type": "array"
+          }
+        },
+        "required": [
+          "item",
+          "related"
+        ],
+        "title": "ItemDetail",
+        "type": "object"
+      },
+      "ItemTopicSuggestion": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TopicCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "confidence": {
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "item": {
+            "$ref": "#/components/schemas/KnowledgeItem"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "item",
+          "candidates",
+          "score",
+          "confidence"
+        ],
+        "title": "ItemTopicSuggestion",
+        "type": "object"
+      },
+      "ItemTopicUpdate": {
+        "properties": {
+          "topicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topicid"
+          }
+        },
+        "title": "ItemTopicUpdate",
+        "type": "object"
+      },
+      "ItemUpdate": {
+        "description": "Partial edit: omitted fields are left alone; an explicit null/blank clears owner, due date or rationale.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedate"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "IDEA",
+                  "DECISION",
+                  "ACTION",
+                  "QUESTION"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "title": "ItemUpdate",
+        "type": "object"
+      },
+      "ItemsTopicBulkUpdate": {
+        "properties": {
+          "itemIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Itemids",
+            "type": "array"
+          },
+          "topicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topicid"
+          }
+        },
+        "required": [
+          "itemIds"
+        ],
+        "title": "ItemsTopicBulkUpdate",
+        "type": "object"
+      },
+      "KnowledgeItem": {
+        "properties": {
+          "confidence": {
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedate"
+          },
+          "dueDateSourceText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedatesourcetext"
+          },
+          "effectivePriority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CRITICAL",
+                  "MAJOR",
+                  "MINOR"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effectivepriority"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/Evidence"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "manualOverride": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManualPriorityOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingId": {
+            "title": "Meetingid",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "relatedIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Relatedids",
+            "type": "array"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "stakeholders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stakeholders",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme"
+          },
+          "topicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topicid"
+          },
+          "topicName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topicname"
+          },
+          "type": {
+            "enum": [
+              "IDEA",
+              "DECISION",
+              "ACTION",
+              "QUESTION"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "description",
+          "status",
+          "confidence",
+          "evidence",
+          "meetingId"
+        ],
+        "title": "KnowledgeItem",
+        "type": "object"
+      },
+      "ManualPriorityOverride": {
+        "properties": {
+          "overriddenAt": {
+            "title": "Overriddenat",
+            "type": "string"
+          },
+          "priority": {
+            "enum": [
+              "CRITICAL",
+              "MAJOR",
+              "MINOR"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "priority",
+          "overriddenAt"
+        ],
+        "title": "ManualPriorityOverride",
+        "type": "object"
+      },
+      "Meeting": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "reviewCandidates": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewCandidate"
+            },
+            "title": "Reviewcandidates",
+            "type": "array"
+          },
+          "sourceUrl": {
+            "title": "Sourceurl",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/Topic"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "date",
+          "sourceUrl",
+          "items",
+          "reviewCandidates",
+          "topics"
+        ],
+        "title": "Meeting",
+        "type": "object"
+      },
+      "Note": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "createdAt"
+        ],
+        "title": "Note",
+        "type": "object"
+      },
+      "NoteCreate": {
+        "properties": {
+          "body": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "NoteCreate",
+        "type": "object"
+      },
+      "PriorityOverrideUpdate": {
+        "properties": {
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CRITICAL",
+                  "MAJOR",
+                  "MINOR"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "PriorityOverrideUpdate",
+        "type": "object"
+      },
+      "RelatedTopic": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "itemCount": {
+            "title": "Itemcount",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "similarity": {
+            "title": "Similarity",
+            "type": "number"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "similarity",
+          "itemCount"
+        ],
+        "title": "RelatedTopic",
+        "type": "object"
+      },
+      "ReviewCandidate": {
+        "properties": {
+          "confidence": {
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/Evidence"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "default": "PENDING",
+            "enum": [
+              "PENDING",
+              "ACCEPTED",
+              "REJECTED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suggestedTopicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestedtopicid"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "description",
+          "reason",
+          "confidence",
+          "evidence"
+        ],
+        "title": "ReviewCandidate",
+        "type": "object"
+      },
+      "ReviewStatusUpdate": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ACCEPTED",
+              "REJECTED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "topicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topicid"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ReviewStatusUpdate",
+        "type": "object"
+      },
+      "SearchResult": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/Topic"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "topics"
+        ],
+        "title": "SearchResult",
+        "type": "object"
+      },
+      "SemanticContribution": {
+        "properties": {
+          "contribution": {
+            "title": "Contribution",
+            "type": "number"
+          },
+          "disagreement": {
+            "title": "Disagreement",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Scores",
+            "type": "object"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "scores",
+          "contribution",
+          "disagreement"
+        ],
+        "title": "SemanticContribution",
+        "type": "object"
+      },
+      "StatusUpdate": {
+        "properties": {
+          "status": {
+            "enum": [
+              "Open",
+              "Closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StatusUpdate",
+        "type": "object"
+      },
+      "TagCreate": {
+        "properties": {
+          "tag": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag"
+        ],
+        "title": "TagCreate",
+        "type": "object"
+      },
+      "Topic": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/TopicImage"
+            },
+            "title": "Images",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TopicPriorityInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stakeholders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stakeholders",
+            "type": "array"
+          },
+          "status": {
+            "default": "Open",
+            "enum": [
+              "Open",
+              "Closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "items",
+          "stakeholders"
+        ],
+        "title": "Topic",
+        "type": "object"
+      },
+      "TopicCandidate": {
+        "description": "A lightweight reference to an existing topic ranked for an item (see app/topic_suggestions.py).",
+        "properties": {
+          "centroidSimilarity": {
+            "title": "Centroidsimilarity",
+            "type": "number"
+          },
+          "itemCount": {
+            "title": "Itemcount",
+            "type": "integer"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "topicId": {
+            "title": "Topicid",
+            "type": "string"
+          },
+          "topicName": {
+            "title": "Topicname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topicId",
+          "topicName",
+          "itemCount",
+          "score",
+          "centroidSimilarity"
+        ],
+        "title": "TopicCandidate",
+        "type": "object"
+      },
+      "TopicCreate": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TopicCreate",
+        "type": "object"
+      },
+      "TopicImage": {
+        "properties": {
+          "contentType": {
+            "title": "Contenttype",
+            "type": "string"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "contentType",
+          "size",
+          "createdAt"
+        ],
+        "title": "TopicImage",
+        "type": "object"
+      },
+      "TopicLink": {
+        "description": "Directed: `target` is one of the topics most related to `source` (same as RelatedTopic).",
+        "properties": {
+          "similarity": {
+            "title": "Similarity",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "similarity"
+        ],
+        "title": "TopicLink",
+        "type": "object"
+      },
+      "TopicMerge": {
+        "properties": {
+          "targetTopicId": {
+            "title": "Targettopicid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetTopicId"
+        ],
+        "title": "TopicMerge",
+        "type": "object"
+      },
+      "TopicMergeSuggestion": {
+        "properties": {
+          "similarity": {
+            "title": "Similarity",
+            "type": "number"
+          },
+          "topicA": {
+            "$ref": "#/components/schemas/Topic"
+          },
+          "topicB": {
+            "$ref": "#/components/schemas/Topic"
+          }
+        },
+        "required": [
+          "topicA",
+          "topicB",
+          "similarity"
+        ],
+        "title": "TopicMergeSuggestion",
+        "type": "object"
+      },
+      "TopicPriorityHistoryEntry": {
+        "properties": {
+          "algorithmVersion": {
+            "title": "Algorithmversion",
+            "type": "string"
+          },
+          "changedAt": {
+            "title": "Changedat",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "newPriority": {
+            "enum": [
+              "CRITICAL",
+              "MAJOR",
+              "MINOR"
+            ],
+            "title": "Newpriority",
+            "type": "string"
+          },
+          "newScore": {
+            "title": "Newscore",
+            "type": "number"
+          },
+          "previousPriority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CRITICAL",
+                  "MAJOR",
+                  "MINOR"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previouspriority"
+          },
+          "previousScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previousscore"
+          },
+          "primaryDrivers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Primarydrivers",
+            "type": "array"
+          },
+          "sourceKnowledgeItemIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sourceknowledgeitemids",
+            "type": "array"
+          },
+          "topicId": {
+            "title": "Topicid",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "newPriority",
+          "newScore",
+          "changedAt",
+          "algorithmVersion",
+          "trigger"
+        ],
+        "title": "TopicPriorityHistoryEntry",
+        "type": "object"
+      },
+      "TopicPriorityInfo": {
+        "properties": {
+          "algorithmVersion": {
+            "title": "Algorithmversion",
+            "type": "string"
+          },
+          "calculatedAt": {
+            "title": "Calculatedat",
+            "type": "string"
+          },
+          "calculatedPriority": {
+            "enum": [
+              "CRITICAL",
+              "MAJOR",
+              "MINOR"
+            ],
+            "title": "Calculatedpriority",
+            "type": "string"
+          },
+          "calculatedScore": {
+            "title": "Calculatedscore",
+            "type": "number"
+          },
+          "confidence": {
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "effectivePriority": {
+            "enum": [
+              "CRITICAL",
+              "MAJOR",
+              "MINOR"
+            ],
+            "title": "Effectivepriority",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "hardEscalations": {
+            "items": {
+              "$ref": "#/components/schemas/HardEscalation"
+            },
+            "title": "Hardescalations",
+            "type": "array"
+          },
+          "manualOverride": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManualPriorityOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "semanticContribution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SemanticContribution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/TopicPrioritySignal"
+            },
+            "title": "Signals",
+            "type": "array"
+          }
+        },
+        "required": [
+          "calculatedPriority",
+          "calculatedScore",
+          "effectivePriority",
+          "confidence",
+          "explanation",
+          "calculatedAt",
+          "algorithmVersion"
+        ],
+        "title": "TopicPriorityInfo",
+        "type": "object"
+      },
+      "TopicPrioritySignal": {
+        "properties": {
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "maxScore": {
+            "title": "Maxscore",
+            "type": "number"
+          },
+          "normalizedScore": {
+            "title": "Normalizedscore",
+            "type": "number"
+          },
+          "rawValue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rawvalue"
+          },
+          "sourceKnowledgeItemIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sourceknowledgeitemids",
+            "type": "array"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "weightedScore": {
+            "title": "Weightedscore",
+            "type": "number"
+          }
+        },
+        "required": [
+          "type",
+          "normalizedScore",
+          "weightedScore",
+          "maxScore",
+          "explanation"
+        ],
+        "title": "TopicPrioritySignal",
+        "type": "object"
+      },
+      "TopicProposal": {
+        "description": "A new topic name the extractor proposed for a group of items; nothing is created until a human accepts it.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "suggestedExistingTopicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestedexistingtopicid"
+          }
+        },
+        "required": [
+          "name",
+          "items"
+        ],
+        "title": "TopicProposal",
+        "type": "object"
+      },
+      "TopicProposalAccept": {
+        "properties": {
+          "existingTopicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Existingtopicid"
+          },
+          "suggestedName": {
+            "title": "Suggestedname",
+            "type": "string"
+          },
+          "topicName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topicname"
+          }
+        },
+        "required": [
+          "suggestedName"
+        ],
+        "title": "TopicProposalAccept",
+        "type": "object"
+      },
+      "TopicProposalReject": {
+        "properties": {
+          "suggestedName": {
+            "title": "Suggestedname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suggestedName"
+        ],
+        "title": "TopicProposalReject",
+        "type": "object"
+      },
+      "TopicUpdate": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TopicUpdate",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "second-brain backend",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/follow-up": {
+      "get": {
+        "operationId": "get_follow_up_api_follow_up_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dueSoonDays",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "minimum": 0,
+              "title": "Duesoondays",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowUpResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Follow Up"
+      }
+    },
+    "/api/graph": {
+      "get": {
+        "operationId": "get_graph_api_graph_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "minSimilarity",
+            "required": false,
+            "schema": {
+              "default": 0.35,
+              "title": "Minsimilarity",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphData"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Graph"
+      }
+    },
+    "/api/ingest": {
+      "post": {
+        "description": "Re-runs the startup ingestion on demand, so new extracts in SeaweedFS show up without a restart.",
+        "operationId": "trigger_ingestion_api_ingest_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Trigger Ingestion Api Ingest Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Trigger Ingestion"
+      }
+    },
+    "/api/items": {
+      "get": {
+        "operationId": "get_items_api_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "IDEA",
+                    "DECISION",
+                    "ACTION",
+                    "QUESTION"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "CRITICAL",
+                    "MAJOR",
+                    "MINOR"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "Open",
+                    "Closed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeItem"
+                  },
+                  "title": "Response Get Items Api Items Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Items"
+      }
+    },
+    "/api/items/topic": {
+      "patch": {
+        "operationId": "set_items_topic_api_items_topic_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemsTopicBulkUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeItem"
+                  },
+                  "title": "Response Set Items Topic Api Items Topic Patch",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Items Topic"
+      }
+    },
+    "/api/items/{item_id}": {
+      "delete": {
+        "operationId": "delete_item_api_items__item_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Item"
+      },
+      "get": {
+        "operationId": "get_item_api_items__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Item"
+      },
+      "patch": {
+        "operationId": "update_item_api_items__item_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Item"
+      }
+    },
+    "/api/items/{item_id}/notes": {
+      "post": {
+        "operationId": "add_item_note_api_items__item_id__notes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Item Note"
+      }
+    },
+    "/api/items/{item_id}/notes/{note_id}": {
+      "delete": {
+        "operationId": "delete_item_note_api_items__item_id__notes__note_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Item Note"
+      },
+      "patch": {
+        "operationId": "update_item_note_api_items__item_id__notes__note_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Item Note"
+      }
+    },
+    "/api/items/{item_id}/priority-override": {
+      "patch": {
+        "operationId": "set_item_priority_override_api_items__item_id__priority_override_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriorityOverrideUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Item Priority Override"
+      }
+    },
+    "/api/items/{item_id}/status": {
+      "patch": {
+        "operationId": "set_item_status_api_items__item_id__status_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Item Status"
+      }
+    },
+    "/api/items/{item_id}/tags": {
+      "delete": {
+        "operationId": "remove_item_tag_api_items__item_id__tags_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tag",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Item Tag"
+      },
+      "post": {
+        "operationId": "add_item_tag_api_items__item_id__tags_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Item Tag"
+      }
+    },
+    "/api/items/{item_id}/topic": {
+      "patch": {
+        "operationId": "set_item_topic_api_items__item_id__topic_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemTopicUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Item Topic"
+      }
+    },
+    "/api/meeting": {
+      "get": {
+        "operationId": "get_meeting_api_meeting_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Meeting"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Meeting"
+      }
+    },
+    "/api/meetings": {
+      "get": {
+        "operationId": "get_meetings_api_meetings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Meeting"
+                  },
+                  "title": "Response Get Meetings Api Meetings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Meetings"
+      }
+    },
+    "/api/meetings/{meeting_id}": {
+      "get": {
+        "operationId": "get_meeting_by_id_api_meetings__meeting_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Meeting"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Meeting By Id"
+      }
+    },
+    "/api/priority-history/recent": {
+      "get": {
+        "operationId": "get_recent_priority_escalations_api_priority_history_recent_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TopicPriorityHistoryEntry"
+                  },
+                  "title": "Response Get Recent Priority Escalations Api Priority History Recent Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Recent Priority Escalations"
+      }
+    },
+    "/api/review": {
+      "get": {
+        "operationId": "get_review_api_review_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewCandidate"
+                  },
+                  "title": "Response Get Review Api Review Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Review"
+      }
+    },
+    "/api/review/topic-proposals": {
+      "get": {
+        "operationId": "get_topic_proposals_api_review_topic_proposals_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TopicProposal"
+                  },
+                  "title": "Response Get Topic Proposals Api Review Topic Proposals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Topic Proposals"
+      }
+    },
+    "/api/review/topic-proposals/accept": {
+      "post": {
+        "operationId": "accept_topic_proposal_api_review_topic_proposals_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicProposalAccept"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeItem"
+                  },
+                  "title": "Response Accept Topic Proposal Api Review Topic Proposals Accept Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Topic Proposal"
+      }
+    },
+    "/api/review/topic-proposals/reject": {
+      "post": {
+        "operationId": "reject_topic_proposal_api_review_topic_proposals_reject_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicProposalReject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Topic Proposal"
+      }
+    },
+    "/api/review/{candidate_id}": {
+      "patch": {
+        "operationId": "update_review_status_api_review__candidate_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewStatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCandidate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Review Status"
+      }
+    },
+    "/api/search": {
+      "get": {
+        "operationId": "search_items_api_search_get",
+        "parameters": [
+          {
+            "description": "Free-text search query",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "Free-text search query",
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Items"
+      }
+    },
+    "/api/topics": {
+      "get": {
+        "operationId": "get_topics_api_topics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Topic"
+                  },
+                  "title": "Response Get Topics Api Topics Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Topics"
+      },
+      "post": {
+        "operationId": "create_topic_api_topics_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Topic"
+      }
+    },
+    "/api/topics/recalculate-priority": {
+      "post": {
+        "operationId": "recalculate_all_topic_priorities_api_topics_recalculate_priority_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Recalculate All Topic Priorities Api Topics Recalculate Priority Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Recalculate All Topic Priorities"
+      }
+    },
+    "/api/topics/suggested-item-topics": {
+      "get": {
+        "operationId": "get_suggested_item_topics_api_topics_suggested_item_topics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ItemTopicSuggestion"
+                  },
+                  "title": "Response Get Suggested Item Topics Api Topics Suggested Item Topics Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Suggested Item Topics"
+      }
+    },
+    "/api/topics/suggested-merges": {
+      "get": {
+        "operationId": "get_suggested_topic_merges_api_topics_suggested_merges_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "maxRelatedItems",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "title": "Maxrelateditems",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TopicMergeSuggestion"
+                  },
+                  "title": "Response Get Suggested Topic Merges Api Topics Suggested Merges Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Suggested Topic Merges"
+      }
+    },
+    "/api/topics/{topic_id}": {
+      "delete": {
+        "operationId": "delete_topic_api_topics__topic_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Topic"
+      },
+      "get": {
+        "operationId": "get_topic_api_topics__topic_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Topic"
+      },
+      "patch": {
+        "operationId": "update_topic_api_topics__topic_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Topic"
+      }
+    },
+    "/api/topics/{topic_id}/images": {
+      "post": {
+        "operationId": "add_topic_image_api_topics__topic_id__images_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_add_topic_image_api_topics__topic_id__images_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Topic Image"
+      }
+    },
+    "/api/topics/{topic_id}/images/{image_id}": {
+      "delete": {
+        "operationId": "delete_topic_image_api_topics__topic_id__images__image_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Topic Image"
+      },
+      "get": {
+        "operationId": "get_topic_image_api_topics__topic_id__images__image_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Topic Image"
+      }
+    },
+    "/api/topics/{topic_id}/items": {
+      "post": {
+        "operationId": "create_topic_item_api_topics__topic_id__items_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Topic Item"
+      }
+    },
+    "/api/topics/{topic_id}/merge": {
+      "post": {
+        "operationId": "merge_topic_api_topics__topic_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicMerge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merge Topic"
+      }
+    },
+    "/api/topics/{topic_id}/notes": {
+      "post": {
+        "operationId": "add_topic_note_api_topics__topic_id__notes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Topic Note"
+      }
+    },
+    "/api/topics/{topic_id}/notes/{note_id}": {
+      "delete": {
+        "operationId": "delete_topic_note_api_topics__topic_id__notes__note_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Topic Note"
+      },
+      "patch": {
+        "operationId": "update_topic_note_api_topics__topic_id__notes__note_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Topic Note"
+      }
+    },
+    "/api/topics/{topic_id}/priority-history": {
+      "get": {
+        "operationId": "get_topic_priority_history_api_topics__topic_id__priority_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TopicPriorityHistoryEntry"
+                  },
+                  "title": "Response Get Topic Priority History Api Topics  Topic Id  Priority History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Topic Priority History"
+      }
+    },
+    "/api/topics/{topic_id}/priority-override": {
+      "patch": {
+        "operationId": "set_topic_priority_override_api_topics__topic_id__priority_override_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriorityOverrideUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Topic Priority Override"
+      }
+    },
+    "/api/topics/{topic_id}/recalculate-priority": {
+      "post": {
+        "operationId": "recalculate_topic_priority_api_topics__topic_id__recalculate_priority_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recalculate Topic Priority"
+      }
+    },
+    "/api/topics/{topic_id}/related": {
+      "get": {
+        "operationId": "get_related_topics_api_topics__topic_id__related_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RelatedTopic"
+                  },
+                  "title": "Response Get Related Topics Api Topics  Topic Id  Related Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Related Topics"
+      }
+    },
+    "/api/topics/{topic_id}/status": {
+      "patch": {
+        "operationId": "set_topic_status_api_topics__topic_id__status_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Topic Status"
+      }
+    },
+    "/api/topics/{topic_id}/tags": {
+      "delete": {
+        "operationId": "remove_topic_tag_api_topics__topic_id__tags_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tag",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Topic Tag"
+      },
+      "post": {
+        "operationId": "add_topic_tag_api_topics__topic_id__tags_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Topic Tag"
+      }
+    }
+  }
+}
