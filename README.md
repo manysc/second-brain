@@ -272,6 +272,7 @@ A few smaller features exist in the code and API but aren't covered elsewhere in
 - **Follow-up digest** — `GET /api/follow-up` (configurable `limit` and `dueSoonDays`) returns a digest of items needing follow-up; this is the data source behind `/briefing`.
 - **Free-text search** — `GET /api/search?q=` does keyword search across items and topics, separate from the embedding-based "similar items" feature described above.
 - **Ask page model picker** — `GET /api/ask/models` lists the models available to `/ask`, letting the user choose which one answers a question.
+- **Ask timeouts** — `/ask` no longer cuts an answer off 120 s after the request starts (Changelog: slow MCP start-up or several tool calls could end a still-streaming answer with "The request timed out or was cancelled."). `postAsk` now aborts only after 120 s with no event from the agent (every streamed event restarts the clock), with a 10-minute hard cap. A timeout reports "The request timed out…" and Stop or a closed tab reports "The request was cancelled."
 
 ## Source mapping
 

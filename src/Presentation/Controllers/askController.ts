@@ -3,7 +3,9 @@ import type { AskInput } from "@/Application/DTOs/Ask";
 import { NotFoundError } from "@/Application/Errors";
 import { useCases } from "@/composition";
 
-const TIMEOUT_MS = 120_000;
+// An answer may take a while (MCP start-up, several tool calls), so only silence is cut short; the hard cap is a backstop.
+export const IDLE_TIMEOUT_MS = 120_000;
+export const MAX_DURATION_MS = 600_000;
 const NO_STORE = { "Cache-Control": "no-store" };
 
 type IdParams = { params: Promise<{ id: string }> };
@@ -17,7 +19,13 @@ export async function postAsk(request: Request): Promise<Response> {
   const outcome = useCases.askQuestion(input, abort.signal);
   if (!outcome.ok) return Response.json({ error: outcome.error }, { status: outcome.status });
 
-  const timeout = setTimeout(() => abort.abort(), TIMEOUT_MS);
+  const timedOut = () => abort.abort(new DOMException("The ask timed out.", "TimeoutError"));
+  let idle = setTimeout(timedOut, IDLE_TIMEOUT_MS);
+  const cap = setTimeout(timedOut, MAX_DURATION_MS);
+  const clearTimers = () => {
+    clearTimeout(idle);
+    clearTimeout(cap);
+  };
   request.signal.addEventListener("abort", () => abort.abort());
 
   const encoder = new TextEncoder();
@@ -25,14 +33,17 @@ export async function postAsk(request: Request): Promise<Response> {
     async start(controller) {
       try {
         for await (const event of outcome.events) {
+          clearTimeout(idle);
+          idle = setTimeout(timedOut, IDLE_TIMEOUT_MS);
           controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
         }
       } finally {
-        clearTimeout(timeout);
+        clearTimers();
         controller.close();
       }
     },
     cancel() {
+      clearTimers();
       abort.abort();
     },
   });

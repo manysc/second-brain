@@ -130,7 +130,7 @@ the tool policy and the system prompt). `src/Infrastructure/ExternalServices/Cla
 - Read-only by construction: built-in tools are disabled, only the `brain_*` read tools are allowed, the write tools
   are explicitly denied, and the server is launched with `BRAIN_MCP_ALLOW_WRITES=false` regardless of your shell.
 - Project and user Claude settings are not loaded (`settingSources: []`, `strictMcpConfig`), so answers do not depend on the developer's machine.
-- Limits: prompts are capped at 2000 characters, 12 agent turns and 120 seconds per request.
+- Limits: prompts are capped at 2000 characters, 12 agent turns, 120 seconds of silence (any streamed event restarts the clock) and 10 minutes in total per request.
 - `SYSTEM_PROMPT` in `src/Application/UseCases/ask.ts` mirrors `INSTRUCTIONS` in `backend/app/presentation/mcp/server.py`, and its
   `READ_TOOLS` / `WRITE_TOOLS` lists must match the tool names registered there; keep them in sync.
 - Answers cite record IDs as `[id]`; topic IDs link to `/topics/{id}` and item IDs link to their meeting.

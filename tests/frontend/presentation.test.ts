@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { NotFoundError, ValidationError } from "@/Application/Errors";
 
 const useCases = vi.hoisted(() => ({
+  askQuestion: vi.fn(),
   getAskSession: vi.fn(),
   deleteAskSession: vi.fn(),
   loadTopicImage: vi.fn(),
@@ -17,7 +18,7 @@ const useCases = vi.hoisted(() => ({
 }));
 vi.mock("@/composition", () => ({ useCases }));
 
-import { deleteAskSession, getAskSession } from "@/Presentation/Controllers/askController";
+import { deleteAskSession, getAskSession, IDLE_TIMEOUT_MS, postAsk } from "@/Presentation/Controllers/askController";
 import { addItemTagAction, createTopicAndMoveItemsAction, moveSuggestedItemsAction } from "@/Presentation/Controllers/itemActions";
 import { field, redirectWithError, topicPath } from "@/Presentation/Controllers/support";
 import { createTopicAction } from "@/Presentation/Controllers/topicActions";
@@ -31,6 +32,54 @@ const params = <T,>(value: T) => ({ params: Promise.resolve(value) });
 
 beforeEach(() => vi.mocked(revalidatePath).mockClear());
 afterEach(() => vi.useRealTimers());
+
+describe("postAsk timeout", () => {
+  const askRequest = () => new Request("http://test/api/ask", { method: "POST", body: JSON.stringify({ prompt: "hi" }) });
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it("keeps a streaming answer alive past the idle limit, since every event restarts the clock", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let signal!: AbortSignal;
+    useCases.askQuestion.mockImplementation((_input: unknown, given: AbortSignal) => {
+      signal = given;
+      async function* events() {
+        for (let i = 0; i < 3; i++) {
+          await sleep(IDLE_TIMEOUT_MS - 20_000);
+          yield { type: "text", text: String(i) };
+        }
+        yield { type: "done" };
+      }
+      return { ok: true, events: events() };
+    });
+
+    const body = (await postAsk(askRequest())).text();
+    await vi.advanceTimersByTimeAsync((IDLE_TIMEOUT_MS - 20_000) * 3);
+
+    expect(signal.aborted).toBe(false);
+    expect((await body).trim().split("\n")).toHaveLength(4);
+  });
+
+  it("aborts with a TimeoutError once the agent has been silent for the idle limit", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let signal!: AbortSignal;
+    useCases.askQuestion.mockImplementation((_input: unknown, given: AbortSignal) => {
+      signal = given;
+      async function* events() {
+        await new Promise((resolve) => given.addEventListener("abort", resolve));
+      }
+      return { ok: true, events: events() };
+    });
+
+    const body = (await postAsk(askRequest())).text();
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS - 1);
+    expect(signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(signal.aborted).toBe(true);
+    expect((signal.reason as DOMException).name).toBe("TimeoutError");
+    await body;
+  });
+});
 
 describe("wording helpers", () => {
   it("formats scores, counts, ages and note dates", () => {

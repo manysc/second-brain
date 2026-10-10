@@ -117,7 +117,9 @@ export function askUseCases(agent: AskAgent, sessions: AskSessionStore, models: 
           yield {
             type: "error",
             message: signal.aborted
-              ? "The request timed out or was cancelled."
+              ? (signal.reason as { name?: string } | undefined)?.name === "TimeoutError"
+                ? "The request timed out. Try a narrower question, or ask again."
+                : "The request was cancelled."
               : sessionId && error instanceof Error && error.message.includes("No conversation found")
                 ? EXPIRED
                 : error instanceof Error

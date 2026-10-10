@@ -136,18 +136,26 @@ describe("asking a question", () => {
     ]);
   });
 
-  it("explains a vanished transcript as an expired conversation, and an abort as a timeout", async () => {
+  it("explains a vanished transcript as an expired conversation, a timeout as a timeout and any other abort as a cancel", async () => {
     const gone = setup([new Error("No conversation found with session ID")]);
     gone.sessions.issue(SESSION);
     const expired = gone.ask.askQuestion({ prompt: "hi", sessionId: SESSION }, live());
     if (!expired.ok) throw new Error(expired.error);
     expect(await collect(expired.events)).toEqual([{ type: "error", message: EXPIRED }]);
 
+    const timeout = new AbortController();
+    timeout.abort(new DOMException("slow", "TimeoutError"));
+    const timedOut = setup([new Error("aborted")]).ask.askQuestion({ prompt: "hi" }, timeout.signal);
+    if (!timedOut.ok) throw new Error(timedOut.error);
+    expect(await collect(timedOut.events)).toEqual([
+      { type: "error", message: "The request timed out. Try a narrower question, or ask again." },
+    ]);
+
     const abort = new AbortController();
     abort.abort();
     const cancelled = setup([new Error("aborted")]).ask.askQuestion({ prompt: "hi" }, abort.signal);
     if (!cancelled.ok) throw new Error(cancelled.error);
-    expect(await collect(cancelled.events)).toEqual([{ type: "error", message: "The request timed out or was cancelled." }]);
+    expect(await collect(cancelled.events)).toEqual([{ type: "error", message: "The request was cancelled." }]);
   });
 });
 
