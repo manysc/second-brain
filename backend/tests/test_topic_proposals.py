@@ -321,21 +321,28 @@ def test_accept_review_candidate_with_blank_topic_uses_uncategorized_and_bad_top
         _delete_candidate_meeting(meeting_id)
 
 
-def test_topic_ranker_is_reused_until_its_inputs_change(db_ready, monkeypatch):
+def test_topic_ranker_is_reused_until_its_inputs_change(db_ready):
+    from app.application.services.topic_ranker_cache import TopicRankerCache
+    from app.infrastructure.external_services.tfidf_description_index import build_tfidf_description_index
+    from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
+
     builds = []
-    real_build = data._topic_ranker
-    monkeypatch.setattr(data, "_topic_ranker", lambda rows: builds.append(1) or real_build(rows))
-    monkeypatch.setattr(data, "_ranker_cache", None)
+
+    def counting_index(descriptions):
+        builds.append(1)
+        return build_tfidf_description_index(descriptions)
+
+    cache = TopicRankerCache(counting_index)
     topic = data.create_topic(_unique("ranker-cache-topic"))
     try:
-        with db.get_session() as session:
-            first = data._load_topic_ranker(session)
-            assert data._load_topic_ranker(session) is first
+        with SqlAlchemyUnitOfWork() as uow:
+            first = cache.get(uow)
+            assert cache.get(uow) is first
         assert len(builds) == 1
 
         data.add_topic_tag(topic.id, "cache-buster")
-        with db.get_session() as session:
-            assert data._load_topic_ranker(session) is not first
+        with SqlAlchemyUnitOfWork() as uow:
+            assert cache.get(uow) is not first
         assert len(builds) == 2
     finally:
         with db.get_session() as session:

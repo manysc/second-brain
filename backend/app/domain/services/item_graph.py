@@ -7,7 +7,7 @@ from __future__ import annotations
 import itertools
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol, TypeVar
 
 import numpy as np
 
@@ -80,7 +80,19 @@ def build_item_edges(
     return edges
 
 
-def related_items(item: KnowledgeItem, all_items: Sequence[KnowledgeItem]) -> list[KnowledgeItem]:
-    """The items an item's evidence-grounded related_ids point at (matched by full id or local key)."""
+class _Linked(Protocol):
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def related_ids(self) -> Sequence[str]: ...
+
+
+_L = TypeVar("_L", bound=_Linked)
+
+
+def related_items(item: _Linked, all_items: Sequence[_L]) -> list[_L]:
+    """The items an item's evidence-grounded related_ids point at (matched by full id or by the id without its
+    meeting prefix). Works on anything that carries an id and related_ids."""
     ids = set(item.related_ids)
-    return [candidate for candidate in all_items if candidate.local_key in ids or candidate.id in ids]
+    return [candidate for candidate in all_items if candidate.id.split(":", 1)[-1] in ids or candidate.id in ids]

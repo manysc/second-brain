@@ -12,6 +12,11 @@ class TopicNotFound(DomainError):
         self.topic_id = topic_id
 
 
+class ProposalTargetTopicNotFound(TopicNotFound):
+    """The existing topic chosen for a topic proposal does not exist. Distinct from TopicNotFound because the
+    request named it in its body, not in its address."""
+
+
 class TopicNameConflict(DomainError):
     """Creating/renaming a topic to a name that is already taken."""
 
@@ -62,6 +67,22 @@ class ItemNotDeletable(DomainError):
     def __init__(self, item_id: str) -> None:
         super().__init__("Only manually added items can be deleted")
         self.item_id = item_id
+
+
+class ReviewCandidateNotFound(DomainError):
+    def __init__(self, candidate_id: str | None = None) -> None:
+        super().__init__("review candidate not found")
+        self.candidate_id = candidate_id
+
+
+class MeetingNotFound(DomainError):
+    def __init__(self, meeting_id: str | None = None) -> None:
+        super().__init__("meeting not found")
+        self.meeting_id = meeting_id
+
+
+class NoMeetingsAvailable(DomainError):
+    """Nothing has been ingested yet."""
 
 
 class ReviewCandidateAlreadyDecided(DomainError):

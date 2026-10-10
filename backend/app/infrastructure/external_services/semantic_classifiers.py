@@ -56,3 +56,10 @@ def semantic_classifier_from_env() -> DisabledSemanticClassifier | HuggingFaceZe
     if provider == "huggingface":
         return HuggingFaceZeroShotClassifier()
     return DisabledSemanticClassifier()
+
+
+class EnvConfiguredSemanticClassifier:
+    """Resolves the provider from the environment on every call, so the setting can change without a restart."""
+
+    def classify(self, context: str) -> SemanticContribution | None:
+        return semantic_classifier_from_env().classify(context)

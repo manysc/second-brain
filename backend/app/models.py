@@ -406,57 +406,11 @@ class GraphData(CamelModel):
     topic_links: list[TopicLink] = Field(default=[], alias="topicLinks")
 
 
-# --- Raw extraction file shape (mirrors the zod schemas previously in src/lib/data.ts) ---
-
-
-class RawEvidence(BaseModel):
-    speaker: str | None = None
-    timestamp: str | None = None
-    quote: str = ""
-    context: str | None = None
-
-
-class RawCandidate(BaseModel):
-    candidate_id: str
-    type: str
-    description: str
-    theme: str | None = None
-    status: str = "Open"
-    owner: str | None = None
-    proposed_by: str | None = None
-    decision_owner: str | None = None
-    due_date: str | None = None
-    due_date_source_text: str | None = None
-    priority: str | None = None
-    confidence: str = "Medium"
-    rationale: str | None = None
-    resolution: str | None = None
-    evidence: RawEvidence
-    related_candidate_ids: list[str] = Field(default_factory=list)
-
-
-class RawMeetingInfo(BaseModel):
-    meeting_id: str
-    title: str
-    date: str
-    source_url: str | None = None
-
-
-class RawReviewCandidate(BaseModel):
-    candidate_type: str
-    description: str
-    reason_for_review: str
-    confidence: str
-    evidence: RawEvidence
-
-
-class RawExtraction(BaseModel):
-    # not read anywhere downstream, and not always repeated on each entry of a multi-meeting
-    # bundle file - kept only for forward compatibility, never required
-    schema_version: str | None = None
-    meeting: RawMeetingInfo
-    ideas: list[RawCandidate]
-    decisions: list[RawCandidate]
-    actions: list[RawCandidate]
-    questions: list[RawCandidate]
-    review_candidates: list[RawReviewCandidate]
+# The raw extraction file schema lives with its parser (the anti-corruption layer); re-exported for old imports.
+from app.infrastructure.external_services.extraction_parser import (  # noqa: E402,F401
+    RawCandidate,
+    RawEvidence,
+    RawExtraction,
+    RawMeetingInfo,
+    RawReviewCandidate,
+)
