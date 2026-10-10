@@ -50,3 +50,7 @@ backend/__pycache__
 backend/**/__pycache__
 backend/.pytest_cache
 next-env.d.ts
+
+# test output
+/test-results/
+/playwright-report/

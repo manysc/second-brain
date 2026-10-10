@@ -11,24 +11,21 @@ import boto3
 import pytest
 from moto import mock_aws
 from sqlalchemy import select
-from sqlalchemy.exc import OperationalError
 
-from app import data, db, ingest, s3_store
-from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
+from app.infrastructure.external_services import s3_storage as s3_store
+from app.infrastructure.persistence import database as db
+from app.infrastructure.persistence.orm_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    ReviewCandidateRow,
+    TopicRow,
+)
+from tests.support import brain, ingest_everything
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 BUCKET = "test-multi-source-bucket"
 PREFIX = "meetings/"
 FILES = ["multi-source-sample--llm-a.json", "multi-source-sample--llm-b.json"]
-
-
-@pytest.fixture(scope="module")
-def db_ready():
-    try:
-        db.init_db()
-    except OperationalError:
-        pytest.skip("Postgres is not reachable at DATABASE_URL; skipping DB integration tests")
-    yield
 
 
 @pytest.fixture
@@ -48,7 +45,7 @@ def ingested_meeting(db_ready, monkeypatch):
         for filename in FILES:
             client.upload_file(str(DATA_DIR / filename), BUCKET, f"{PREFIX}{filename}")
         with db.get_session() as session:
-            ingest.ingest_all_from_s3(session)
+            ingest_everything(session)
             session.commit()
 
     # unlike test_postgres_ingestion.py's seeded_meetings (real sample data meant to stay), this
@@ -120,6 +117,6 @@ def test_distinct_actions_from_both_variants_are_both_kept(ingested_meeting):
 
 
 def test_meetings_load_reflects_the_merge(ingested_meeting):
-    meetings = data.load_meetings()
+    meetings = brain.list_meetings()
     meeting = next(m for m in meetings if m.id == ingested_meeting)
     assert len(meeting.items) == 3  # 1 merged decision + 2 distinct actions (no review candidates)

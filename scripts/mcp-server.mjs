@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Cross-platform launcher for the Brain Assistant MCP server (Python, backend/mcp_server).
+// Cross-platform launcher for the Brain Assistant MCP server (Python, backend/app/presentation/mcp).
 //
 //   node scripts/mcp-server.mjs            start the stdio server (what .mcp.json runs)
 //   node scripts/mcp-server.mjs --check    verify the environment and that the server builds
@@ -34,12 +34,12 @@ let args;
 if (mode === "--check") {
   args = [
     "-c",
-    "import mcp_server.server as s; s.create_server(); print('brain-assistant MCP: build check passed')",
+    "import app.presentation.mcp.server as s; s.create_server(); print('brain-assistant MCP: build check passed')",
   ];
 } else if (mode === "--test") {
   args = ["-m", "pytest", "tests/mcp_tests", "-q", ...process.argv.slice(3)];
 } else {
-  args = ["-m", "mcp_server"];
+  args = ["-m", "app.presentation.mcp"];
 }
 
 const child = spawn(python, args, {

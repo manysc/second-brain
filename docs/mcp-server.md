@@ -5,15 +5,16 @@ A project-local [MCP](https://modelcontextprotocol.io) server that lets Claude C
 ## Architecture
 
 ```
-Claude Code ──stdio──> scripts/mcp-server.mjs ──> python -m mcp_server
+Claude Code ──stdio──> scripts/mcp-server.mjs ──> python -m app.presentation.mcp
                                                     tools (server.py: validation, annotations, error mapping)
                                                       -> service.py / writes.py (shaping, filters, bounds, write guard)
-                                                        -> app.data  (the existing domain layer, unchanged rules)
-                                                          -> Postgres
+                                                        -> application use cases (the same ones the REST API calls)
+                                                          -> domain entities -> repositories -> Postgres
 ```
 
-- **Python, not TypeScript.** The backend is Python (FastAPI, SQLAlchemy). The official Python SDK `mcp` 2.x is used, so there is no second runtime and the server imports `app.data` directly instead of calling the REST API. Pydantic models play the role Zod would in a TypeScript server.
-- The adapter holds no business rules. Search, priority, topics, notes and status changes all go through `app.data`. The only backend edit is extracting `find_item` and `filter_items` from the REST handlers into `data.py` so both callers share them.
+- **Python, not TypeScript.** The backend is Python (FastAPI, SQLAlchemy). The official Python SDK `mcp` 2.x is used, so there is no second runtime and the server calls the application use cases directly instead of going through the REST API. Pydantic models play the role Zod would in a TypeScript server.
+- The adapter holds no business rules. It lives in the presentation layer (`backend/app/presentation/mcp/`, see [architecture.md](../architecture.md)) next to the REST API, and search, priority, topics, notes and status changes all go through the use cases in `backend/app/application/use_cases/`. `__main__.py` is its composition root: it builds the `Container` and passes it to the tools through `context.py`.
+- Failures arrive as domain and application exceptions (`ItemNotFound`, `StorageUnavailable`, ...) and `errors.py` maps them to the error codes below.
 - `stdout` carries only JSON-RPC. Logs go to `stderr` through a redacting filter.
 
 ## Prerequisites
@@ -52,7 +53,7 @@ cd .. && npm run mcp:build                             # expect "build check pas
 | `npm run mcp:test` | Runs the MCP unit, contract and stdio integration tests (needs Postgres for the integration ones). |
 | `npm run mcp:inspect` | Opens the MCP Inspector against the server. |
 
-Optional lint and types: `pip install -r backend/requirements-dev.txt`, then `ruff check mcp_server` and `mypy mcp_server --ignore-missing-imports`.
+Optional lint and types: `pip install -r backend/requirements-dev.txt`, then, from `backend/`, `ruff check app/presentation/mcp` and `mypy app/presentation/mcp --ignore-missing-imports`.
 
 ## Claude Code configuration
 
@@ -119,16 +120,19 @@ Every result marks where information came from: `retrieved` (stored fact), `gene
 
 ## Ask page
 
-`/ask` answers free-form questions through the same tools Claude Code uses. `src/app/api/ask/route.ts` runs the Claude Agent SDK
-(`@anthropic-ai/claude-agent-sdk`) with this MCP server attached and streams newline-delimited JSON events
-(`meta`, `text`, `tool`, `done`, `error`) to `src/components/AskConversation.tsx`.
+`/ask` answers free-form questions through the same tools Claude Code uses. The route handlers under `src/app/api/ask/` delegate to
+`src/Presentation/Controllers/askController.ts`, which calls the ask use cases (`src/Application/UseCases/ask.ts`: validation, limits,
+the tool policy and the system prompt). `src/Infrastructure/ExternalServices/ClaudeAgentSdkAsk.ts` runs the Claude Agent SDK
+(`@anthropic-ai/claude-agent-sdk`) with this MCP server attached, and the controller streams newline-delimited JSON events
+(`meta`, `text`, `tool`, `done`, `error`) to `src/Presentation/Components/AskConversation.tsx`.
 
 - Requires `ANTHROPIC_API_KEY` (or a logged-in Claude Code) in the Next.js server environment.
-- Read-only by construction: built-in tools are disabled, only the `brain_*` read tools are allowed, the two write tools
+- Read-only by construction: built-in tools are disabled, only the `brain_*` read tools are allowed, the write tools
   are explicitly denied, and the server is launched with `BRAIN_MCP_ALLOW_WRITES=false` regardless of your shell.
 - Project and user Claude settings are not loaded (`settingSources: []`, `strictMcpConfig`), so answers do not depend on the developer's machine.
 - Limits: prompts are capped at 2000 characters, 12 agent turns and 120 seconds per request.
-- The system prompt mirrors `INSTRUCTIONS` in `backend/mcp_server/server.py`; keep the two in sync.
+- `SYSTEM_PROMPT` in `src/Application/UseCases/ask.ts` mirrors `INSTRUCTIONS` in `backend/app/presentation/mcp/server.py`, and its
+  `READ_TOOLS` / `WRITE_TOOLS` lists must match the tool names registered there; keep them in sync.
 - Answers cite record IDs as `[id]`; topic IDs link to `/topics/{id}` and item IDs link to their meeting.
 - Follow-ups: the first `meta` event carries a `sessionId`; the page sends it back with each follow-up and the route resumes
   that Agent SDK session (`resume`), so the model keeps earlier tool results. The allowlist, `dontAsk` and read-only env are
@@ -175,8 +179,9 @@ Every result marks where information came from: `retrieved` (stored fact), `gene
 
 ## Adding a tool safely
 
-1. Add the operation to `app.data` first if it does not exist, with its rules and tests. The MCP layer must not own business logic.
+1. Add the operation as an application use case first if it does not exist (rule on the entity, use case in `backend/app/application/use_cases/`, registered in `backend/app/container.py`), with its tests. The MCP layer must not own business logic.
 2. Add output models to `schemas.py` and the logic to `service.py` (reads) or `writes.py` (writes, behind `WriteGuard`).
 3. Register it in `server.py` with a precise description (when to use, when not to, limits, whether it changes data), constrained parameters, accurate annotations, and the shared `_adapt` wrapper.
-4. Test the pure logic in `tests/mcp_tests`, add a happy path and a failure case to the stdio integration test, and confirm `stdout` stays clean.
-5. Add it to the catalog above.
+4. Test the pure logic in `tests/mcp_tests`, add a happy path and a failure case to the stdio integration test, and confirm `stdout` stays clean. Regenerate the tool-catalog snapshot (`python -m tests.contract_snapshots` from `backend/`); `tests/test_contracts.py` fails until you do.
+5. If `/ask` should be able to call it, add its name to `READ_TOOLS` (or `WRITE_TOOLS`, to keep it denied) in `src/Application/UseCases/ask.ts`.
+6. Add it to the catalog above.

@@ -1,4 +1,5 @@
-"""Ports scripts/verify-ingestion.mjs: sanity-checks the raw extraction files and app.data loading."""
+"""Sanity-checks the raw extraction fixtures and how the extract source (S3 + the extraction parser) turns
+them into ExtractedMeeting values. moto stands in for SeaweedFS; no database is involved."""
 import json
 from pathlib import Path
 
@@ -6,7 +7,21 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from app import ingest, s3_store
+from app.application.exceptions import MalformedExtract
+from app.domain.value_objects.extraction import ExtractedMeeting
+from app.infrastructure.external_services import s3_storage as s3_store
+from app.infrastructure.external_services.extraction_parser import parse_single_extract
+from app.infrastructure.external_services.s3_storage import S3ExtractSource
+
+
+def _parse_single(key: str) -> ExtractedMeeting:
+    """A file known to hold exactly one meeting."""
+    return parse_single_extract(key, s3_store.fetch_object_text(key))
+
+
+def _parse(key: str) -> list[ExtractedMeeting]:
+    """Whatever the file holds, as ingestion reads it."""
+    return S3ExtractSource().load(key)
 
 DATA_DIR = Path(__file__).resolve().parent / "fixtures"
 BUCKET = "test-bucket"
@@ -82,7 +97,7 @@ def test_parse_meeting_from_s3_normalizes_the_same_counts(s3_env):
 
         keys = s3_store.list_extract_keys()
         assert len(keys) == 1
-        meeting = ingest.parse_meeting_from_s3(keys[0])
+        meeting = _parse_single(keys[0])
         assert len(meeting.items) == sum(
             EXPECTED_COUNTS[key] for key in ("ideas", "decisions", "actions", "questions")
         )
@@ -97,7 +112,7 @@ def test_parse_meeting_from_s3_derives_unique_ids_from_s3_key_when_source_ids_co
         _upload(client, "synthetic-sync-a.json")
         _upload(client, "synthetic-sync-b.json")
 
-        meetings = [ingest.parse_meeting_from_s3(key) for key in s3_store.list_extract_keys()]
+        meetings = [_parse_single(key) for key in s3_store.list_extract_keys()]
         assert len(meetings) == 2
         assert meetings[0].id != meetings[1].id
 
@@ -113,7 +128,7 @@ def test_parse_meetings_from_s3_handles_multi_meeting_bundle(s3_env):
 
         keys = s3_store.list_extract_keys()
         assert len(keys) == 1
-        meetings = ingest.parse_meetings_from_s3(keys[0])
+        meetings = _parse(keys[0])
         assert len(meetings) == 2
         assert meetings[0].id != meetings[1].id
         assert all(meeting.id.startswith("synthetic-bundle-extract-") for meeting in meetings)
@@ -129,9 +144,9 @@ def test_parse_meetings_from_s3_returns_single_meeting_for_non_bundle_files(s3_e
         _upload(client, "synthetic-extract.json")
 
         keys = s3_store.list_extract_keys()
-        meetings = ingest.parse_meetings_from_s3(keys[0])
+        meetings = _parse(keys[0])
         assert len(meetings) == 1
-        assert meetings[0].id == ingest.parse_meeting_from_s3(keys[0]).id
+        assert meetings[0].id == _parse_single(keys[0]).id
 
 
 def test_parse_meetings_from_s3_defaults_null_source_url_to_the_filename(s3_env):
@@ -141,7 +156,7 @@ def test_parse_meetings_from_s3_defaults_null_source_url_to_the_filename(s3_env)
         _upload(client, "synthetic-null-source-url.json")
 
         keys = s3_store.list_extract_keys()
-        meetings = ingest.parse_meetings_from_s3(keys[0])
+        meetings = _parse(keys[0])
         assert len(meetings) == 1
         assert meetings[0].source_url == "synthetic-null-source-url.json"
 
@@ -157,7 +172,7 @@ def test_parse_meetings_from_s3_finds_bundle_entries_under_any_list_key(s3_env):
 
         keys = s3_store.list_extract_keys()
         assert len(keys) == 1
-        meetings = ingest.parse_meetings_from_s3(keys[0])
+        meetings = _parse(keys[0])
         assert len(meetings) == 2
         assert meetings[0].id != meetings[1].id
         assert all(meeting.id.startswith("synthetic-bundle-meetings-key-") for meeting in meetings)
@@ -173,8 +188,8 @@ def test_parse_meetings_from_s3_raises_a_clear_error_for_unrecognized_files(s3_e
         _upload(client, "synthetic-unrecognized.json")
 
         keys = s3_store.list_extract_keys()
-        with pytest.raises(ValueError, match="not a recognized single-meeting or bundle extraction file"):
-            ingest.parse_meetings_from_s3(keys[0])
+        with pytest.raises(MalformedExtract, match="not a recognized single-meeting or bundle extraction file"):
+            _parse(keys[0])
 
 
 def test_parse_meetings_from_s3_splits_a_flattened_register_by_embedded_source_meeting(s3_env):
@@ -190,7 +205,7 @@ def test_parse_meetings_from_s3_splits_a_flattened_register_by_embedded_source_m
 
         keys = s3_store.list_extract_keys()
         assert len(keys) == 1
-        meetings = ingest.parse_meetings_from_s3(keys[0])
+        meetings = _parse(keys[0])
         assert len(meetings) == 3
 
         dated = [m for m in meetings if m.id.endswith("-review") is False]
@@ -198,10 +213,10 @@ def test_parse_meetings_from_s3_splits_a_flattened_register_by_embedded_source_m
 
         assert [m.date for m in dated] == ["2026-07-01", "2026-07-08"]
         assert all(len(m.items) == 3 for m in dated)  # 1 decision + 1 action + 1 question each
-        assert all(m.review_candidates == [] for m in dated)
+        assert all(m.review_candidates == () for m in dated)
         assert all(m.title == "Synthetic 1:1 Meeting Register" for m in dated)
 
-        assert review_only.items == []
+        assert review_only.items == ()
         assert len(review_only.review_candidates) == 2
         assert review_only.title == "Synthetic 1:1 Meeting Register"
 
@@ -218,7 +233,7 @@ def test_parse_meetings_from_s3_returns_single_meeting_when_no_candidate_is_tagg
         _upload(client, "synthetic-extract.json")
 
         keys = s3_store.list_extract_keys()
-        meetings = ingest.parse_meetings_from_s3(keys[0])
+        meetings = _parse(keys[0])
         assert len(meetings) == 1
 
 
@@ -229,6 +244,6 @@ def test_parse_meetings_from_s3_raises_for_a_partially_tagged_flattened_register
         _upload(client, "synthetic-partially-flattened.json")
 
         keys = s3_store.list_extract_keys()
-        with pytest.raises(ValueError, match="lack the 'source meeting' annotation"):
-            ingest.parse_meetings_from_s3(keys[0])
+        with pytest.raises(MalformedExtract, match="lack the 'source meeting' annotation"):
+            _parse(keys[0])
 

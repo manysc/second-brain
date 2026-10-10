@@ -1,9 +1,9 @@
-import { AppShell } from "@/components/AppShell";
-import { TopicGrid } from "@/components/TopicGrid";
-import { SuggestedTopicMerges } from "@/components/SuggestedTopicMerges";
-import { getSuggestedTopicMerges, getTopics } from "@/lib/api";
-import { createTopicAction } from "@/lib/actions";
-import { PRIORITY_RANK, type TopicPriorityLevel } from "@/lib/domain";
+import { AppShell } from "@/Presentation/Components/AppShell";
+import { TopicGrid } from "@/Presentation/Components/TopicGrid";
+import { SuggestedTopicMerges } from "@/Presentation/Components/SuggestedTopicMerges";
+import { useCases } from "@/composition";
+import { createTopicAction } from "@/Presentation/Controllers/topicActions";
+import { type TopicPriorityLevel, byPriorityDesc } from "@/Domain";
 
 const PRIORITY_FILTERS: (TopicPriorityLevel | "ALL")[] = ["ALL", "CRITICAL", "MAJOR", "MINOR"];
 
@@ -13,8 +13,8 @@ export default async function Topics({
   searchParams: Promise<{ error?: string; priority?: string }>;
 }) {
   const [topics, suggestions, params] = await Promise.all([
-    getTopics(),
-    getSuggestedTopicMerges(),
+    useCases.listTopics(),
+    useCases.suggestTopicMerges(),
     searchParams,
   ]);
   const error = params.error;
@@ -23,13 +23,7 @@ export default async function Topics({
   const filteredTopics = activeFilter
     ? topics.filter((t) => (t.priority?.effectivePriority ?? null) === activeFilter)
     : topics;
-  // highest priority first, then by score within the same priority level
-  const sortedTopics = [...filteredTopics].sort((a, b) => {
-    const rankA = a.priority ? PRIORITY_RANK[a.priority.effectivePriority] : -1;
-    const rankB = b.priority ? PRIORITY_RANK[b.priority.effectivePriority] : -1;
-    if (rankA !== rankB) return rankB - rankA;
-    return (b.priority?.calculatedScore ?? 0) - (a.priority?.calculatedScore ?? 0);
-  });
+  const sortedTopics = [...filteredTopics].sort(byPriorityDesc);
 
   return (
     <AppShell>

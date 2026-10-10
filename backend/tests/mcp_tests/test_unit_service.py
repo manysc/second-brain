@@ -3,11 +3,10 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from app import data
-from app.models import GraphData, GraphEdge, Note
-from mcp_server import service
-from mcp_server.errors import BrainError
-from mcp_server.service import Snapshot
+from app.application.dtos import GraphDTO, GraphEdgeDTO, SearchResultDTO
+from app.presentation.mcp import context, service
+from app.presentation.mcp.errors import BrainError
+from app.presentation.mcp.service import Snapshot
 from tests.mcp_tests import factories as f
 
 TODAY = date(2026, 9, 19)
@@ -19,7 +18,7 @@ def snap(monkeypatch):
     d1 = f.item("m1:D-1", "DECISION", "Adopt plan Z. It is final.", status="Closed", owner="Ada Lovelace")
     a1 = f.item(
         "m1:A-1", "ACTION", "Write the checklist.", owner="Ada Lovelace", due_date="2026-09-01", related_ids=["D-1"],
-        priority="MAJOR", notes=[Note(id="n1", body="pinged", created_at="2026-09-18T10:00:00+00:00")],
+        priority="MAJOR", notes=[f.note("n1", "pinged", "2026-09-18T10:00:00+00:00")],
     )
     a2 = f.item("m1:A-2", "ACTION", "Book the venue.", owner="Bob", due_date="2026-10-01", priority="CRITICAL")
     a3 = f.item("m2:A-1", "ACTION", "Undated chore.", owner="Ada Lovelace", meeting_id="m2")
@@ -32,9 +31,7 @@ def snap(monkeypatch):
         items=[d1, a1, a2, a3, a4, q1, q2],
     )
     monkeypatch.setattr(Snapshot, "load", classmethod(lambda cls: snapshot))
-    monkeypatch.setattr(data, "get_priority_history", lambda topic_id: [])
-    monkeypatch.setattr(data, "semantic_similar_items", lambda item, limit=5: [])
-    monkeypatch.setattr(data, "related_topics", lambda topic_id, **kw: [])
+    monkeypatch.setattr(context, "_container", f.application())
     return snapshot
 
 
@@ -99,9 +96,11 @@ def test_semantic_query_uses_application_search_and_keeps_its_order(snap, monkey
 
     def fake_search(q, limit=20):
         calls.append((q, limit))
-        return [snap.item_by_id["m1:Q-1"], snap.item_by_id["m1:A-1"]], [snap.topic_by_id["t1"]]
+        return SearchResultDTO(
+            items=(snap.item_by_id["m1:Q-1"], snap.item_by_id["m1:A-1"]), topics=(snap.topic_by_id["t1"],)
+        )
 
-    monkeypatch.setattr(data, "search", fake_search)
+    monkeypatch.setattr(context.use_cases(), "search", fake_search)
     result = search(query="sign off")
     assert calls == [("sign off", service.SEARCH_POOL)]
     assert [i.id for i in result.items][:2] == ["m1:Q-1", "m1:A-1"]
@@ -211,17 +210,19 @@ def test_recent_changes_rejects_bad_windows(snap):
 
 
 # ---- graph ----
-EDGES = [
-    GraphEdge(source="m1:A-1", target="m1:D-1", kind="related"),
-    GraphEdge(source="m1:Q-1", target="m1:D-1", kind="related"),
-    GraphEdge(source="m1:A-1", target="m1:A-2", kind="semantic", weight=0.61234567),
-    GraphEdge(source="m1:A-2", target="m2:A-1", kind="topic"),
-]
+EDGES = (
+    GraphEdgeDTO(source="m1:A-1", target="m1:D-1", kind="related"),
+    GraphEdgeDTO(source="m1:Q-1", target="m1:D-1", kind="related"),
+    GraphEdgeDTO(source="m1:A-1", target="m1:A-2", kind="semantic", weight=0.61234567),
+    GraphEdgeDTO(source="m1:A-2", target="m2:A-1", kind="topic"),
+)
 
 
 @pytest.fixture()
 def edges(snap, monkeypatch):
-    monkeypatch.setattr(data, "build_graph", lambda min_semantic_similarity=0.35: GraphData(nodes=[], edges=EDGES))
+    monkeypatch.setattr(
+        context.use_cases(), "build_graph", lambda min_semantic_similarity=0.35: GraphDTO(nodes=(), edges=EDGES), raising=False
+    )
 
 
 def graph(**kw):

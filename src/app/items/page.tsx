@@ -1,8 +1,8 @@
-import { AppShell } from "@/components/AppShell";
-import { KnowledgeCard } from "@/components/KnowledgeCard";
-import { BulkMoveProvider, SelectableItem } from "@/components/BulkTopicMove";
-import { getItems, getTopics } from "@/lib/api";
-import type { ItemType, TopicPriorityLevel } from "@/lib/domain";
+import { AppShell } from "@/Presentation/Components/AppShell";
+import { KnowledgeCard } from "@/Presentation/Components/KnowledgeCard";
+import { BulkMoveProvider, SelectableItem } from "@/Presentation/Components/BulkTopicMove";
+import { useCases } from "@/composition";
+import type { ItemType, TopicPriorityLevel } from "@/Domain";
 
 const PRIORITY_FILTERS: (TopicPriorityLevel | "ALL")[] = ["ALL", "CRITICAL", "MAJOR", "MINOR"];
 
@@ -14,7 +14,7 @@ export default async function Items({
   const params = await searchParams;
   const typeFilter = params.type as ItemType | undefined;
   const priorityFilter = (params.priority?.toUpperCase() as TopicPriorityLevel | undefined) || undefined;
-  const [items, topics] = await Promise.all([getItems(typeFilter, priorityFilter), getTopics()]);
+  const [items, topics] = await Promise.all([useCases.listItems(typeFilter, priorityFilter), useCases.listTopics()]);
 
   return (
     <AppShell>

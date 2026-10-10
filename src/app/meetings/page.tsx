@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { AppShell } from "@/components/AppShell";
-import { IngestMeetingsButton } from "@/components/IngestMeetingsButton";
-import { getMeetings } from "@/lib/api";
+import { AppShell } from "@/Presentation/Components/AppShell";
+import { IngestMeetingsButton } from "@/Presentation/Components/IngestMeetingsButton";
+import { type ItemType, countItemsOfType } from "@/Domain";
+import { useCases } from "@/composition";
 
 function dateParts(date: string) {
   const parsed = new Date(`${date}T00:00:00`);
@@ -13,7 +14,7 @@ function dateParts(date: string) {
 }
 
 export default async function Meetings() {
-  const meetings = await getMeetings();
+  const meetings = await useCases.listMeetings();
   return (
     <AppShell>
       <div className="page-head">
@@ -26,7 +27,7 @@ export default async function Meetings() {
       </div>
       {meetings.map((meeting) => {
         const { day, month, year } = dateParts(meeting.date);
-        const count = (type: string) => meeting.items.filter((item) => item.type === type).length;
+        const count = (type: ItemType) => countItemsOfType(meeting, type);
         return (
           <section className="meeting-row" key={meeting.id}>
             <div className="date-block">

@@ -1,6 +1,6 @@
-"""Integration tests for data.get_follow_up() against a real Postgres+pgvector instance.
+"""Integration tests for brain.get_follow_up() against a real Postgres+pgvector instance.
 
-Mirrors test_topics.py's / test_topic_priority.py's db_ready pattern (auto-skips if Postgres
+Uses the shared db_ready fixture (auto-skips if Postgres
 isn't reachable) and seeds synthetic meetings/topics/items directly at the row level so
 inclusion/exclusion/ordering/cross-topic behavior is deterministic regardless of whatever real
 data is already in the database.
@@ -11,19 +11,14 @@ import uuid
 
 import pytest
 from sqlalchemy import delete
-from sqlalchemy.exc import OperationalError
 
-from app import data, db
-from app.db_models import KnowledgeItemRow, MeetingRow, TopicRow
-
-
-@pytest.fixture(scope="module")
-def db_ready():
-    try:
-        db.init_db()
-    except OperationalError:
-        pytest.skip("Postgres is not reachable at DATABASE_URL; skipping DB integration tests")
-    yield
+from app.infrastructure.persistence import database as db
+from app.infrastructure.persistence.orm_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    TopicRow,
+)
+from tests.support import brain
 
 
 def _item_row(
@@ -66,11 +61,11 @@ def follow_up_scenario(db_ready):
     topic_ids: list[str] = []
     try:
         # setup is inside the try so topics created before a later setup step fails still get cleaned up
-        topic_a = data.create_topic(f"follow-up-topic-a-{uuid.uuid4().hex[:8]}")
+        topic_a = brain.create_topic(f"follow-up-topic-a-{uuid.uuid4().hex[:8]}")
         topic_ids.append(topic_a.id)
-        topic_b = data.create_topic(f"follow-up-topic-b-{uuid.uuid4().hex[:8]}")
+        topic_b = brain.create_topic(f"follow-up-topic-b-{uuid.uuid4().hex[:8]}")
         topic_ids.append(topic_b.id)
-        topic_c = data.create_topic(f"follow-up-topic-c-{uuid.uuid4().hex[:8]}")
+        topic_c = brain.create_topic(f"follow-up-topic-c-{uuid.uuid4().hex[:8]}")
         topic_ids.append(topic_c.id)
 
         q1 = f"{meeting_id}:Q-1"
@@ -118,12 +113,12 @@ def _topics_by_id(response, topic_id: str):
 
 
 def test_excludes_topic_with_only_resolved_items(follow_up_scenario):
-    response = data.get_follow_up(limit=1000)
+    response = brain.get_follow_up(limit=1000)
     assert _topics_by_id(response, follow_up_scenario["topic_c"]) is None
 
 
 def test_includes_unresolved_question_and_overdue_action(follow_up_scenario):
-    response = data.get_follow_up(limit=1000)
+    response = brain.get_follow_up(limit=1000)
     topic_a = _topics_by_id(response, follow_up_scenario["topic_a"])
     assert topic_a is not None
     follow_up_ids = {item.id for item in topic_a.follow_up_items}
@@ -133,7 +128,7 @@ def test_includes_unresolved_question_and_overdue_action(follow_up_scenario):
 
 
 def test_decision_included_only_with_unresolved_dependent(follow_up_scenario):
-    response = data.get_follow_up(limit=1000)
+    response = brain.get_follow_up(limit=1000)
     topic_a = _topics_by_id(response, follow_up_scenario["topic_a"])
     assert topic_a is not None
     follow_up_ids = {item.id for item in topic_a.follow_up_items}
@@ -142,7 +137,7 @@ def test_decision_included_only_with_unresolved_dependent(follow_up_scenario):
 
 
 def test_follow_up_items_ordered_questions_then_actions_then_decisions(follow_up_scenario):
-    response = data.get_follow_up(limit=1000)
+    response = brain.get_follow_up(limit=1000)
     topic_a = _topics_by_id(response, follow_up_scenario["topic_a"])
     assert topic_a is not None
     ordered_ids = [item.id for item in topic_a.follow_up_items]
@@ -151,7 +146,7 @@ def test_follow_up_items_ordered_questions_then_actions_then_decisions(follow_up
 
 
 def test_cross_topic_related_item_surfaced(follow_up_scenario):
-    response = data.get_follow_up(limit=1000)
+    response = brain.get_follow_up(limit=1000)
     topic_a = _topics_by_id(response, follow_up_scenario["topic_a"])
     assert topic_a is not None
     related_ids = {r.item.id for r in topic_a.related_from_other_topics}
@@ -161,5 +156,5 @@ def test_cross_topic_related_item_surfaced(follow_up_scenario):
 
 
 def test_limit_truncates_ranked_topics(follow_up_scenario):
-    response = data.get_follow_up(limit=1)
+    response = brain.get_follow_up(limit=1)
     assert len(response.topics) == 1

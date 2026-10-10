@@ -1,9 +1,9 @@
-import { AppShell } from "@/components/AppShell";
-import { GraphView } from "@/components/GraphView";
-import { getGraph } from "@/lib/api";
+import { AppShell } from "@/Presentation/Components/AppShell";
+import { GraphView } from "@/Presentation/Components/GraphView";
+import { useCases } from "@/composition";
 
 export default async function GraphPage() {
-  const graph = await getGraph();
+  const graph = await useCases.getGraph();
   return (
     <AppShell>
       <div className="page-head">

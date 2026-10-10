@@ -1,11 +1,11 @@
-import { AppShell } from "@/components/AppShell";
-import { KnowledgeCard } from "@/components/KnowledgeCard";
-import { StatusFilterRow, parseStatusFilter } from "@/components/StatusBadge";
-import { getItems } from "@/lib/api";
+import { AppShell } from "@/Presentation/Components/AppShell";
+import { KnowledgeCard } from "@/Presentation/Components/KnowledgeCard";
+import { StatusFilterRow, parseStatusFilter } from "@/Presentation/Components/StatusBadge";
+import { useCases } from "@/composition";
 
 export default async function Questions({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const filter = parseStatusFilter((await searchParams).status);
-  const all = await getItems("QUESTION");
+  const all = await useCases.listItems("QUESTION");
   const open = all.filter((item) => item.status === "Open");
   const items = filter === "All" ? all : all.filter((item) => item.status === filter);
   return (

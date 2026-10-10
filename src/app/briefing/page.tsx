@@ -1,9 +1,9 @@
-import { AppShell } from "@/components/AppShell";
-import { FollowUpTopicCard } from "@/components/FollowUpTopicCard";
-import { getFollowUp } from "@/lib/api";
+import { AppShell } from "@/Presentation/Components/AppShell";
+import { FollowUpTopicCard } from "@/Presentation/Components/FollowUpTopicCard";
+import { useCases } from "@/composition";
 
 export default async function Briefing() {
-  const followUp = await getFollowUp();
+  const followUp = await useCases.getFollowUp();
   return (
     <AppShell>
       <div className="page-head">
