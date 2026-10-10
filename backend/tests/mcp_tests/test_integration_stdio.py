@@ -233,6 +233,50 @@ def test_controlled_writes_with_read_back(synthetic, tmp_path):
     drive(tmp_path, writes=True, scenario=scenario)
 
 
+def test_create_topic_and_move_items_with_read_back(synthetic, tmp_path):
+    from tests.support import brain
+
+    ids = synthetic
+    name = f"mcp-test-created-{ids.suffix}"
+    created_ids: list[str] = []
+
+    async def scenario(s, client):
+        created = await s.call("brain_create_topic", {"name": name, "provenance": "integration test"})
+        topic_id = created["topic"]["id"]
+        created_ids.append(topic_id)
+        assert created["applied"] == ["created"] and created["topic"]["name"] == name
+        assert created["audit"]["actor"] == "claude-code-dev"
+
+        # a taken name conflicts and creates nothing
+        assert "CONFLICT" in await s.call("brain_create_topic", {"name": name, "provenance": "test"}, expect_error=True)
+        assert "VALIDATION_ERROR" in await s.call("brain_create_topic", {"name": "   ", "provenance": "test"}, expect_error=True)
+
+        # all-or-nothing: one unknown id moves nothing
+        base = {"topicId": topic_id, "reason": "integration test move", "provenance": "integration test"}
+        unknown = await s.call("brain_move_items", {**base, "itemIds": [ids.decision, "nope:X-1"]}, expect_error=True)
+        assert "VALIDATION_ERROR" in unknown or "NOT_FOUND" in unknown
+        assert (await s.call("brain_get_item", {"itemId": ids.decision}))["item"]["topic"]["id"] == ids.topic
+        assert "NOT_FOUND" in await s.call("brain_move_items", {**base, "topicId": "nope", "itemIds": [ids.decision]}, expect_error=True)
+
+        # bulk move (duplicates collapse), then read back
+        moved = await s.call("brain_move_items", {**base, "itemIds": [ids.decision, ids.question, ids.decision]})
+        assert {i["id"] for i in moved["moved"]} == {ids.decision, ids.question} and len(moved["moved"]) == 2
+        assert moved["topic"]["id"] == topic_id and moved["applied"] == ["topicId"]
+        for item_id in (ids.decision, ids.question):
+            assert (await s.call("brain_get_item", {"itemId": item_id}))["item"]["topic"]["id"] == topic_id
+
+        # and back again
+        back = {"topicId": ids.topic, "reason": "integration test restore", "provenance": "integration test"}
+        await s.call("brain_move_items", {**back, "itemIds": [ids.decision, ids.question]})
+        assert (await s.call("brain_get_item", {"itemId": ids.question}))["item"]["topic"]["id"] == ids.topic
+
+    try:
+        drive(tmp_path, writes=True, scenario=scenario)
+    finally:
+        for topic_id in created_ids:
+            brain.delete_topic(topic_id)
+
+
 def _read_lines(stream, out: "queue.Queue[str | None]") -> None:
     for line in iter(stream.readline, ""):
         out.put(line)

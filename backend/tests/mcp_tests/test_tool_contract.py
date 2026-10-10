@@ -15,7 +15,10 @@ READ_TOOLS = {
     "brain_health", "brain_search_items", "brain_get_item", "brain_get_topic_context", "brain_get_relationship_graph",
     "brain_list_open_actions", "brain_list_unresolved_questions", "brain_get_recent_changes",
 }
-WRITE_TOOLS = {"brain_update_item", "brain_add_note", "brain_add_item", "brain_edit_item", "brain_delete_item"}
+WRITE_TOOLS = {
+    "brain_update_item", "brain_add_note", "brain_add_item", "brain_edit_item", "brain_delete_item",
+    "brain_create_topic", "brain_move_items",
+}
 
 
 def run(scenario, **config):
@@ -47,6 +50,9 @@ def test_tool_discovery_annotations_and_schemas():
     assert tools["brain_add_item"].annotations.idempotent_hint is False
     assert tools["brain_edit_item"].annotations.destructive_hint is True
     assert tools["brain_delete_item"].annotations.destructive_hint is True
+    assert tools["brain_create_topic"].annotations.destructive_hint is False
+    assert tools["brain_create_topic"].annotations.idempotent_hint is False
+    assert tools["brain_move_items"].annotations.destructive_hint is True
 
 
 def test_no_dangerous_generic_tools_are_exposed():
@@ -93,6 +99,14 @@ BAD_CALLS = [
     ("brain_edit_item", {"itemId": "a", "patch": {"description": "x"}, "reason": "no", "provenance": "test"}),
     ("brain_delete_item", {"itemId": "a", "reason": "no", "provenance": "test"}),
     ("brain_delete_item", {"itemId": "x; DROP TABLE knowledge_items", "reason": "valid reason", "provenance": "test"}),
+    ("brain_create_topic", {"name": "", "provenance": "test"}),
+    ("brain_create_topic", {"name": "x" * 201, "provenance": "test"}),
+    ("brain_create_topic", {"name": "ok", "provenance": "test", "extra": 1}),
+    ("brain_move_items", {"itemIds": [], "topicId": "t", "reason": "valid reason", "provenance": "test"}),
+    ("brain_move_items", {"itemIds": [f"i{n}" for n in range(26)], "topicId": "t", "reason": "valid reason", "provenance": "test"}),
+    ("brain_move_items", {"itemIds": ["a"], "topicId": "t", "reason": "no", "provenance": "test"}),
+    ("brain_move_items", {"itemIds": ["x; DROP TABLE"], "topicId": "t", "reason": "valid reason", "provenance": "test"}),
+    ("brain_move_items", {"itemIds": ["a"], "reason": "valid reason", "provenance": "test"}),
 ]
 
 
@@ -122,6 +136,8 @@ def test_writes_are_forbidden_unless_the_operator_enabled_them():
         ("brain_add_item", {"topicId": "t", "type": "IDEA", "description": "x", "provenance": "test"}),
         ("brain_edit_item", {"itemId": "a", "patch": {"description": "x"}, "reason": "valid reason", "provenance": "test"}),
         ("brain_delete_item", {"itemId": "a", "reason": "valid reason", "provenance": "test"}),
+        ("brain_create_topic", {"name": "New topic", "provenance": "test"}),
+        ("brain_move_items", {"itemIds": ["a"], "topicId": "t", "reason": "valid reason", "provenance": "test"}),
     ],
 )
 def test_new_write_tools_are_forbidden_unless_enabled(name, args):

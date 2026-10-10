@@ -12,7 +12,7 @@ from app.presentation.api.schemas import ItemCreate, ItemUpdate, NoteCreate
 from app.presentation.mcp.config import Config
 from app.presentation.mcp.context import use_cases
 from app.presentation.mcp.errors import BrainError, not_found
-from app.presentation.mcp.schemas import AuditOut, WriteOut
+from app.presentation.mcp.schemas import AuditOut, MoveOut, Ref, TopicWriteOut, WriteOut
 from app.presentation.mcp.service import Snapshot, item_summary
 
 audit_log = logging.getLogger("brain_mcp.audit")
@@ -249,6 +249,34 @@ def delete_item(guard: WriteGuard, item_id: str, reason: str, provenance: str) -
             ) from None
         audit = _audit(actor, "brain_delete_item", item_id, ["deleted"], provenance, reason)
         return WriteOut(item=summary, applied=["deleted"], audit=audit)
+
+
+def create_topic(guard: WriteGuard, name: str, provenance: str) -> TopicWriteOut:
+    actor = guard.check()
+    clean = name.strip()
+    if not clean:
+        raise BrainError("VALIDATION_ERROR", "Topic name must not be blank.")
+    with _write_lock:
+        created = use_cases().create_topic(clean)  # name rules and conflicts come from the domain
+        audit = _audit(actor, "brain_create_topic", created.id, ["created"], provenance, None)
+        return TopicWriteOut(topic=Ref(id=created.id, name=created.name), applied=["created"], audit=audit)
+
+
+def move_items(guard: WriteGuard, item_ids: list[str], topic_id: str, reason: str, provenance: str) -> MoveOut:
+    actor = guard.check()
+    if not reason or len(reason.strip()) < 5:
+        raise BrainError("VALIDATION_ERROR", "A reason (at least 5 characters) is required to move items.")
+    ids = list(dict.fromkeys(item_ids))  # drop duplicates, keep order
+    with _write_lock:
+        topic = Snapshot.load().topic_or_404(topic_id)
+        try:
+            use_cases().assign_items_topic(ids, topic_id)  # all or nothing: an unknown id moves nothing
+        except TopicNotFound:
+            raise not_found("Topic", topic_id) from None
+        fresh = Snapshot.load()
+        moved = [item_summary(fresh, fresh.item_or_404(item_id)) for item_id in ids]
+        audit = _audit(actor, "brain_move_items", topic_id, [f"items={len(ids)}"], provenance, reason)
+        return MoveOut(topic=Ref(id=topic.id, name=topic.name), moved=moved, applied=["topicId"], audit=audit)
 
 
 def add_note(guard: WriteGuard, item_id: str, body: str, provenance: str) -> WriteOut:

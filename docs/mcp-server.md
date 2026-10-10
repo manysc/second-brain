@@ -67,7 +67,7 @@ Optional lint and types: `pip install -r backend/requirements-dev.txt`, then, fr
 - `claude mcp list`
 - `claude mcp get brain-assistant`
 
-**Enable writes** (off by default): export `BRAIN_MCP_ALLOW_WRITES=true` before starting Claude Code. `.mcp.json` passes it through.
+**Writes** are on by default for Claude Code in this repo: `.mcp.json` passes `BRAIN_MCP_ALLOW_WRITES` through with a default of `true`. To turn them off, export `BRAIN_MCP_ALLOW_WRITES=false` before starting Claude Code. The server itself still defaults to `false` when the variable is unset, so any other client must opt in. Reconnect (`/mcp`) after changing it.
 
 A server added while a session is running is not discovered until the session restarts or you run `/mcp` and reconnect.
 
@@ -96,6 +96,8 @@ npx @modelcontextprotocol/inspector --cli node scripts/mcp-server.mjs --method t
 | `brain_add_item` | write | Add an idea, question, decision or action to an existing topic. Recorded as a manual entry (evidence "Added manually") on the synthetic `manual` meeting. |
 | `brain_edit_item` | write | Edit description, owner, `dueDate`, rationale, or type (type only for manual items). Needs a reason; optional `expectedCurrent` (including `description`). Blank owner/`dueDate`/rationale clears the field. |
 | `brain_delete_item` | write | Permanently delete a **manually added** item and its notes. Needs a reason. Items extracted from meetings are refused (`FORBIDDEN`) because the next ingest would re-create them. |
+| `brain_create_topic` | write | Create a new, empty topic. A taken name fails with `CONFLICT`. |
+| `brain_move_items` | write | Move 1-25 items into one existing topic, all or nothing (an unknown item id moves nothing); priorities are recalculated once. Needs a reason. Use `brain_update_item` for a single item. |
 
 **Resources:** `brain://items/{itemId}`, `brain://topics/{topicId}/context`, `brain://meetings/{meetingId}/summary`.
 
@@ -116,7 +118,8 @@ Every result marks where information came from: `retrieved` (stored fact), `gene
 - "Add a note to this action saying the vendor replied."
 - "Trace how this idea led to the current decision."
 
-"Create a follow-up action" is not possible today, since the application cannot create items. Claude can add a note or move an existing item instead.
+- "Create a topic called Vendor Onboarding and move these three actions into it."
+- "Create a follow-up action on this topic" (`brain_add_item`).
 
 ## Ask page
 
@@ -127,15 +130,17 @@ the tool policy and the system prompt). `src/Infrastructure/ExternalServices/Cla
 (`meta`, `text`, `tool`, `done`, `error`) to `src/Presentation/Components/AskConversation.tsx`.
 
 - Requires `ANTHROPIC_API_KEY` (or a logged-in Claude Code) in the Next.js server environment.
-- Read-only by construction: built-in tools are disabled, only the `brain_*` read tools are allowed, the write tools
-  are explicitly denied, and the server is launched with `BRAIN_MCP_ALLOW_WRITES=false` regardless of your shell.
+- Read/write, but only through the brain tools: built-in tools are disabled and only the `brain_*` tools are allowed. The server is
+  launched with `BRAIN_MCP_ALLOW_WRITES=true` and `BRAIN_MCP_ACTOR=second-brain-ask` regardless of your shell, so writes are attributable.
+  `brain_delete_item` (irreversible) is explicitly denied (`DENIED_TOOLS` in `ask.ts`); the system prompt tells the model to change
+  data only when asked and to say exactly what changed.
 - Project and user Claude settings are not loaded (`settingSources: []`, `strictMcpConfig`), so answers do not depend on the developer's machine.
 - Limits: prompts are capped at 2000 characters, 12 agent turns, 120 seconds of silence (any streamed event restarts the clock) and 10 minutes in total per request.
 - `SYSTEM_PROMPT` in `src/Application/UseCases/ask.ts` mirrors `INSTRUCTIONS` in `backend/app/presentation/mcp/server.py`, and its
   `READ_TOOLS` / `WRITE_TOOLS` lists must match the tool names registered there; keep them in sync.
 - Answers cite record IDs as `[id]`; topic IDs link to `/topics/{id}` and item IDs link to their meeting.
 - Follow-ups: the first `meta` event carries a `sessionId`; the page sends it back with each follow-up and the route resumes
-  that Agent SDK session (`resume`), so the model keeps earlier tool results. The allowlist, `dontAsk` and read-only env are
+  that Agent SDK session (`resume`), so the model keeps earlier tool results. The allowlist, `dontAsk` and the server env are
   re-applied on every turn. A conversation is capped at 20 questions in the UI.
 - Session safety: the SDK resolves a session id across all projects, so a client-supplied id could otherwise resume (and append
   to) an unrelated Claude Code session. The route therefore only accepts ids it issued itself, recorded as marker files in
@@ -183,5 +188,5 @@ the tool policy and the system prompt). `src/Infrastructure/ExternalServices/Cla
 2. Add output models to `schemas.py` and the logic to `service.py` (reads) or `writes.py` (writes, behind `WriteGuard`).
 3. Register it in `server.py` with a precise description (when to use, when not to, limits, whether it changes data), constrained parameters, accurate annotations, and the shared `_adapt` wrapper.
 4. Test the pure logic in `tests/mcp_tests`, add a happy path and a failure case to the stdio integration test, and confirm `stdout` stays clean. Regenerate the tool-catalog snapshot (`python -m tests.contract_snapshots` from `backend/`); `tests/test_contracts.py` fails until you do.
-5. If `/ask` should be able to call it, add its name to `READ_TOOLS` (or `WRITE_TOOLS`, to keep it denied) in `src/Application/UseCases/ask.ts`.
+5. Add its name to `READ_TOOLS` or `WRITE_TOOLS` in `src/Application/UseCases/ask.ts`. A write tool is callable from `/ask` unless it is also listed in `DENIED_TOOLS`.
 6. Add it to the catalog above.

@@ -3,6 +3,16 @@
 Entries are a dated log: file and function names in an entry are the ones that existed on its date. The
 2026-10-10 entry moved most of them; [architecture.md](../architecture.md) maps the current layout.
 
+## MCP write access: create topic and bulk move (2026-10-10)
+
+- New MCP write tools `brain_create_topic` and `brain_move_items`, thin adapters over the existing `CreateTopic` and
+  `AssignItemsTopic` use cases (`presentation/mcp/writes.py`, `server.py`, `schemas.py`). No domain or application change.
+- `.mcp.json` now defaults `BRAIN_MCP_ALLOW_WRITES` to `true` for Claude Code.
+- `/ask` can write: it launches the server with writes on (actor `second-brain-ask`) and allows every write tool except
+  `brain_delete_item` (`ASK_WRITE_TOOLS` / `DENIED_TOOLS` in `src/Application/UseCases/ask.ts`).
+- Fixed `WRITE_TOOLS` in `presentation/mcp/service.py`, which listed only two of the write tools in `brain_health`.
+- Tests: MCP contract/unit/stdio integration tests and the `/ask` Vitest suites cover the new tools and policy.
+
 ## Clean Architecture refactor (2026-10-10)
 
 The backend and the frontend were reorganized into the layers described in `architecture.md` (Domain,

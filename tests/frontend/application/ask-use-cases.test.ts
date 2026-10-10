@@ -1,11 +1,11 @@
 // @vitest-environment node
-// The ask flow against in-memory ports: what is validated, which conversations may be touched, the read-only tool
+// The ask flow against in-memory ports: what is validated, which conversations may be touched, the tool
 // policy handed to the agent, and how a run is reported. No Agent SDK and no file system.
 import { describe, expect, it, vi } from "vitest";
 import type { AskEvent, AskModel, Turn } from "@/Application/DTOs/Ask";
 import { NotFoundError } from "@/Application/Errors";
 import type { AskAgent, AskAgentRequest, AskSessionStore, StoredSession } from "@/Application/Interfaces/Ask";
-import { READ_TOOLS, SYSTEM_PROMPT, WRITE_TOOLS, askUseCases, parseEffort, parseModel } from "@/Application/UseCases/ask";
+import { ASK_WRITE_TOOLS, DENIED_TOOLS, READ_TOOLS, SYSTEM_PROMPT, WRITE_TOOLS, askUseCases, parseEffort, parseModel } from "@/Application/UseCases/ask";
 
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const EXPIRED = "This conversation has expired. Start a new conversation.";
@@ -105,8 +105,8 @@ describe("asking a question", () => {
       {
         prompt: "What changed?",
         systemPrompt: SYSTEM_PROMPT,
-        allowedTools: READ_TOOLS,
-        forbiddenTools: WRITE_TOOLS,
+        allowedTools: [...READ_TOOLS, ...ASK_WRITE_TOOLS],
+        forbiddenTools: DENIED_TOOLS,
         maxTurns: 12,
         model: "opus",
         effort: "high",
@@ -115,6 +115,10 @@ describe("asking a question", () => {
       },
     ]);
     expect(READ_TOOLS.filter((tool) => (WRITE_TOOLS as readonly string[]).includes(tool))).toEqual([]);
+    // irreversible tools are never allowed, and every denied tool is a real write tool
+    expect(ASK_WRITE_TOOLS).toEqual(expect.arrayContaining(["brain_create_topic", "brain_move_items"]));
+    expect(ASK_WRITE_TOOLS).not.toContain("brain_delete_item");
+    expect(DENIED_TOOLS.filter((tool) => !(WRITE_TOOLS as readonly string[]).includes(tool))).toEqual([]);
   });
 
   it("resumes an issued conversation and drops unusable model and effort values", async () => {

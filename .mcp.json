@@ -7,7 +7,7 @@
       "env": {
         "NODE_ENV": "development",
         "BRAIN_ENV": "development",
-        "BRAIN_MCP_ALLOW_WRITES": "${BRAIN_MCP_ALLOW_WRITES:-false}"
+        "BRAIN_MCP_ALLOW_WRITES": "${BRAIN_MCP_ALLOW_WRITES:-true}"
       }
     }
   }

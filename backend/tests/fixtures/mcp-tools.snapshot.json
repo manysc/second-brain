@@ -958,6 +958,115 @@
     },
     {
       "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Create a new, empty topic by name. The name must be unique (case rules follow the app); a taken name fails with CONFLICT. Afterwards use brain_move_items to file existing items under it or brain_add_item to add a new one. Requires provenance. Modifies data; disabled unless the operator enabled writes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Display name of the new topic.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "provenance": {
+            "description": "Why/where this came from, e.g. 'user request in Claude Code'.",
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Provenance",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "provenance"
+        ],
+        "title": "brain_create_topicArguments",
+        "type": "object"
+      },
+      "name": "brain_create_topic",
+      "outputSchema": {
+        "$defs": {
+          "AuditOut": {
+            "properties": {
+              "actor": {
+                "title": "Actor",
+                "type": "string"
+              },
+              "provenance": {
+                "title": "Provenance",
+                "type": "string"
+              },
+              "recordedIn": {
+                "title": "Recordedin",
+                "type": "string"
+              }
+            },
+            "required": [
+              "actor",
+              "recordedIn",
+              "provenance"
+            ],
+            "title": "AuditOut",
+            "type": "object"
+          },
+          "Ref": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Name"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "title": "Ref",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "applied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Applied",
+            "type": "array"
+          },
+          "audit": {
+            "$ref": "#/$defs/AuditOut"
+          },
+          "topic": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "required": [
+          "topic",
+          "applied",
+          "audit"
+        ],
+        "title": "TopicWriteOut",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
         "destructiveHint": true,
         "idempotentHint": true,
         "openWorldHint": false,
@@ -5845,6 +5954,459 @@
           "totalMatched"
         ],
         "title": "WorkListOut",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Move up to 25 items into one existing topic in a single all-or-nothing call (an unknown item ID moves nothing). Topic priorities are recalculated once afterwards. Use brain_update_item to move a single item. Requires a reason and provenance. Modifies data; disabled unless the operator enabled writes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "itemIds": {
+            "description": "Items to move.",
+            "items": {
+              "description": "Stable record ID exactly as returned by another tool.",
+              "pattern": "^[A-Za-z0-9_.:\\-]{1,200}$",
+              "type": "string"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "title": "Itemids",
+            "type": "array"
+          },
+          "provenance": {
+            "description": "Why/where this came from, e.g. 'user request in Claude Code'.",
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Provenance",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why these items are being moved.",
+            "maxLength": 500,
+            "minLength": 5,
+            "title": "Reason",
+            "type": "string"
+          },
+          "topicId": {
+            "description": "Stable topic ID as returned by another tool.",
+            "pattern": "^[A-Za-z0-9_.:\\-]{1,200}$",
+            "title": "Topicid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemIds",
+          "topicId",
+          "reason",
+          "provenance"
+        ],
+        "title": "brain_move_itemsArguments",
+        "type": "object"
+      },
+      "name": "brain_move_items",
+      "outputSchema": {
+        "$defs": {
+          "AuditOut": {
+            "properties": {
+              "actor": {
+                "title": "Actor",
+                "type": "string"
+              },
+              "provenance": {
+                "title": "Provenance",
+                "type": "string"
+              },
+              "recordedIn": {
+                "title": "Recordedin",
+                "type": "string"
+              }
+            },
+            "required": [
+              "actor",
+              "recordedIn",
+              "provenance"
+            ],
+            "title": "AuditOut",
+            "type": "object"
+          },
+          "EvidenceOut": {
+            "properties": {
+              "context": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Context"
+              },
+              "provenance": {
+                "default": "retrieved",
+                "enum": [
+                  "retrieved",
+                  "generated",
+                  "inferred",
+                  "human_confirmed",
+                  "agent_asserted"
+                ],
+                "title": "Provenance",
+                "type": "string"
+              },
+              "quote": {
+                "default": "",
+                "title": "Quote",
+                "type": "string"
+              },
+              "speaker": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Speaker"
+              },
+              "timestamp": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Timestamp"
+              }
+            },
+            "title": "EvidenceOut",
+            "type": "object"
+          },
+          "ItemSummary": {
+            "properties": {
+              "dueDate": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Duedate"
+              },
+              "evidence": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/EvidenceOut"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "excerpt": {
+                "title": "Excerpt",
+                "type": "string"
+              },
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "lastUpdated": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Latest known activity (meeting date, note, or override). The app stores no updated_at.",
+                "title": "Lastupdated"
+              },
+              "meeting": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ref"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "owners": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Owners",
+                "type": "array"
+              },
+              "priority": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Priority"
+              },
+              "priorityProvenance": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "retrieved",
+                      "generated",
+                      "inferred",
+                      "human_confirmed",
+                      "agent_asserted"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Priorityprovenance"
+              },
+              "provenance": {
+                "default": "retrieved",
+                "enum": [
+                  "retrieved",
+                  "generated",
+                  "inferred",
+                  "human_confirmed",
+                  "agent_asserted"
+                ],
+                "title": "Provenance",
+                "type": "string"
+              },
+              "relationshipCount": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Relationshipcount"
+              },
+              "score": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Score"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/SourceRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Status"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ref"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "type": {
+                "enum": [
+                  "IDEA",
+                  "DECISION",
+                  "ACTION",
+                  "QUESTION",
+                  "TOPIC",
+                  "MEETING"
+                ],
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "title",
+              "excerpt"
+            ],
+            "title": "ItemSummary",
+            "type": "object"
+          },
+          "Ref": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Name"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "title": "Ref",
+            "type": "object"
+          },
+          "SourceRef": {
+            "properties": {
+              "meetingId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Meetingid"
+              },
+              "meetingTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Meetingtitle"
+              },
+              "sourceUrl": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Sourceurl"
+              },
+              "speaker": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Speaker"
+              },
+              "timestamp": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Timestamp"
+              }
+            },
+            "title": "SourceRef",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "applied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Applied",
+            "type": "array"
+          },
+          "audit": {
+            "$ref": "#/$defs/AuditOut"
+          },
+          "moved": {
+            "items": {
+              "$ref": "#/$defs/ItemSummary"
+            },
+            "title": "Moved",
+            "type": "array"
+          },
+          "topic": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "required": [
+          "topic",
+          "moved",
+          "applied",
+          "audit"
+        ],
+        "title": "MoveOut",
         "type": "object"
       }
     },

@@ -256,6 +256,8 @@ Filing without a human in the loop is unchanged: ingestion auto-filing, and acce
 
 `/ask` (`src/Infrastructure/ExternalServices/ClaudeAgentSdkAsk.ts`, reached through `src/app/api/ask/route.ts`) calls `@anthropic-ai/claude-agent-sdk`'s `query()` with no auth option set, so it authenticates with whatever credential the Agent SDK finds in the environment. With no `ANTHROPIC_API_KEY` set, it falls back to the logged-in Claude Code / VS Code extension session (`~/.claude/.credentials.json`) — that is, your Claude Pro OAuth session, not a raw Anthropic API key. That means data-sharing settings for these requests are governed by that account's own "Help improve Claude" setting (claude.ai/settings/data-privacy-controls), not by anything in this app.
 
+`/ask` and Claude Code can both change data through the MCP server, but only when asked: `brain_create_topic` (new empty topic), `brain_move_items` (move up to 25 items into one topic, all or nothing) and `brain_update_item` (single item status, priority or topic), plus the add/edit-item and note tools. (Changelog: writes were off before. `.mcp.json` now defaults `BRAIN_MCP_ALLOW_WRITES` to `true`, and `/ask` launches the server with writes on as actor `second-brain-ask`. `/ask` still denies `brain_delete_item`. Set `BRAIN_MCP_ALLOW_WRITES=false` to turn writes off for Claude Code. See `docs/mcp-server.md`.)
+
 ## Other implemented features
 
 A few smaller features exist in the code and API but aren't covered elsewhere in this README:

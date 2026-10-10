@@ -26,7 +26,7 @@ export default async function Ask({
       <div className="ask-page">
         <p className="eyebrow">Ask my brain / Brain Assistant</p>
         <h1>What do you need to know?</h1>
-        <p className="lede">Answers use the same read-only Brain Assistant tools as Claude Code, with record IDs cited for every claim.</p>
+        <p className="lede">Answers use the same Brain Assistant tools as Claude Code, with record IDs cited for every claim. It can also change topics and items when you ask it to.</p>
         <AskConversation
           key={query}
           initialQuery={query}

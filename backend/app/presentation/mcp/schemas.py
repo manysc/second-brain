@@ -228,3 +228,16 @@ class WriteOut(Out):
     applied: list[str]
     audit: AuditOut
     note_id: str | None = None
+
+
+class TopicWriteOut(Out):
+    topic: Ref
+    applied: list[str]
+    audit: AuditOut
+
+
+class MoveOut(Out):
+    topic: Ref
+    moved: list[ItemSummary]
+    applied: list[str]
+    audit: AuditOut

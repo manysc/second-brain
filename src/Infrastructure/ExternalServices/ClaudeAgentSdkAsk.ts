@@ -37,7 +37,8 @@ export class ClaudeAgentSdkAsk implements AskAgent {
             env: {
               ...(process.env as Record<string, string>),
               BRAIN_ENV: process.env.BRAIN_ENV ?? "development",
-              BRAIN_MCP_ALLOW_WRITES: "false",
+              BRAIN_MCP_ALLOW_WRITES: "true",
+              BRAIN_MCP_ACTOR: "second-brain-ask",
             },
           },
         },

@@ -54,7 +54,15 @@ READ_TOOLS = [
     "brain_list_unresolved_questions",
     "brain_get_recent_changes",
 ]
-WRITE_TOOLS = ["brain_update_item", "brain_add_note"]
+WRITE_TOOLS = [
+    "brain_update_item",
+    "brain_add_note",
+    "brain_add_item",
+    "brain_edit_item",
+    "brain_delete_item",
+    "brain_create_topic",
+    "brain_move_items",
+]
 RESOURCES = ["brain://items/{itemId}", "brain://topics/{topicId}/context", "brain://meetings/{meetingId}/summary"]
 
 

@@ -202,6 +202,69 @@ def test_note_is_stamped_with_actor_and_provenance(monkeypatch):
     assert body.startswith("follow up Friday") and "claude-code-dev" in body and "user request" in body
 
 
+def _topic_recorder(monkeypatch, snapshot, **extra):
+    calls: list[tuple] = []
+    monkeypatch.setattr(writes.Snapshot, "load", classmethod(lambda cls: snapshot))
+    monkeypatch.setattr(
+        context,
+        "_container",
+        f.application(
+            create_topic=lambda name: calls.append(("create", name)) or f.topic("t9", name, []),
+            assign_items_topic=lambda ids, topic_id: calls.append(("move", list(ids), topic_id)),
+            **extra,
+        ),
+    )
+    return calls
+
+
+def test_create_topic_trims_the_name_and_audits(monkeypatch):
+    calls = _topic_recorder(monkeypatch, _snapshot())
+    out = writes.create_topic(_guard(), "  Roadmap  ", "unit test")
+    assert calls == [("create", "Roadmap")]
+    assert (out.topic.id, out.topic.name, out.applied) == ("t9", "Roadmap", ["created"])
+    assert out.audit.actor == "claude-code-dev"
+
+
+def test_create_topic_rejects_blank_name_and_disabled_writes(monkeypatch):
+    calls = _topic_recorder(monkeypatch, _snapshot())
+    with pytest.raises(BrainError) as blank:
+        writes.create_topic(_guard(), "   ", "unit")
+    assert blank.value.code == "VALIDATION_ERROR"
+    with pytest.raises(BrainError) as forbidden:
+        writes.create_topic(writes.WriteGuard(load_config({})), "Roadmap", "unit")
+    assert forbidden.value.code == "FORBIDDEN" and calls == []
+
+
+def test_move_items_dedupes_ids_and_returns_the_moved_items(monkeypatch):
+    calls = _topic_recorder(monkeypatch, _snapshot())
+    out = writes.move_items(_guard(), ["m1:A-1", "m1:A-1"], "t2", "regrouping", "unit test")
+    assert calls == [("move", ["m1:A-1"], "t2")]
+    assert [i.id for i in out.moved] == ["m1:A-1"] and out.topic.id == "t2" and out.applied == ["topicId"]
+
+
+def test_move_items_requires_reason_and_an_existing_topic(monkeypatch):
+    calls = _topic_recorder(monkeypatch, _snapshot())
+    with pytest.raises(BrainError) as no_reason:
+        writes.move_items(_guard(), ["m1:A-1"], "t2", " ", "unit")
+    assert no_reason.value.code == "VALIDATION_ERROR"
+    with pytest.raises(BrainError) as no_topic:
+        writes.move_items(_guard(), ["m1:A-1"], "zzz", "regrouping", "unit")
+    assert no_topic.value.code == "NOT_FOUND" and calls == []
+
+
+def test_move_items_surfaces_unknown_items_without_moving(monkeypatch):
+    ItemsNotFound = domain.ItemsNotFound
+
+    def refuse(ids, topic_id):
+        raise ItemsNotFound(set(ids))
+
+    _topic_recorder(monkeypatch, _snapshot())
+    monkeypatch.setattr(context._container, "assign_items_topic", refuse)
+    with pytest.raises(ItemsNotFound) as caught:  # server.py's _adapt maps it to a coded ToolError
+        writes.move_items(_guard(), ["ghost"], "t2", "regrouping", "unit")
+    assert map_exception(caught.value).code == "VALIDATION_ERROR"
+
+
 def test_write_rate_limit():
     clock = iter([0.0, 1.0, 2.0])
     cfg = load_config({"BRAIN_MCP_ALLOW_WRITES": "true", "BRAIN_MCP_WRITE_RATE_PER_MINUTE": "2"})
