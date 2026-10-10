@@ -1,5 +1,7 @@
 // The request every backend API client call must produce; shared by the client tests and the OpenAPI contract test.
-import * as api from "@/lib/api";
+import { BackendApiClient } from "@/Infrastructure/ExternalServices/BackendApiClient";
+
+const api = new BackendApiClient();
 
 export type Case = { name: string; run: () => Promise<unknown>; method: string; path: string; body?: unknown };
 

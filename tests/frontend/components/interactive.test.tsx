@@ -13,13 +13,15 @@ const actions = vi.hoisted(() => ({
   moveSuggestedItemsAction: vi.fn(),
   createTopicAndMoveItemsAction: vi.fn(),
 }));
-vi.mock("@/lib/actions", () => actions);
+vi.mock("@/Presentation/Controllers/itemActions", () => actions);
+vi.mock("@/Presentation/Controllers/reviewActions", () => actions);
+vi.mock("@/Presentation/Controllers/topicActions", () => actions);
 
-import { BulkMoveProvider, SelectableItem } from "@/components/BulkTopicMove";
-import { IngestMeetingsButton } from "@/components/IngestMeetingsButton";
-import { ReviewCandidateList } from "@/components/ReviewCandidateList";
-import { SuggestedItemTopics } from "@/components/SuggestedItemTopics";
-import { TopicProposalList } from "@/components/TopicProposalList";
+import { BulkMoveProvider, SelectableItem } from "@/Presentation/Components/BulkTopicMove";
+import { IngestMeetingsButton } from "@/Presentation/Components/IngestMeetingsButton";
+import { ReviewCandidateList } from "@/Presentation/Components/ReviewCandidateList";
+import { SuggestedItemTopics } from "@/Presentation/Components/SuggestedItemTopics";
+import { TopicProposalList } from "@/Presentation/Components/TopicProposalList";
 import { candidate, proposal, suggestion, topic } from "../support/factories";
 
 const TOPICS = [

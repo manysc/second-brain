@@ -1,4 +1,4 @@
-import type { KnowledgeItem, ReviewCandidate, SuggestionRow, Topic, TopicProposal } from "@/lib/domain";
+import type { KnowledgeItem, ReviewCandidate, SuggestionRow, Topic, TopicProposal } from "@/Domain";
 
 export function item(overrides: Partial<KnowledgeItem> = {}): KnowledgeItem {
   return {

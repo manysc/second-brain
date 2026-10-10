@@ -10,7 +10,7 @@ const { TMP } = await vi.hoisted(async () => {
   const fs = await import("node:fs");
   const p = await import("node:path");
   const dir = fs.mkdtempSync(p.join(os.tmpdir(), "sb-ask-test-"));
-  // os.tmpdir() reads these on every call, so ask-sessions resolves SESSION_CWD inside `dir`
+  // os.tmpdir() reads these on every call, so the session store resolves SESSION_CWD inside `dir`
   process.env.TMPDIR = dir;
   process.env.TEMP = dir;
   process.env.TMP = dir;
@@ -31,7 +31,8 @@ import { GET as listSessionsRoute } from "@/app/api/ask/sessions/route";
 import { DELETE as deleteSessionRoute, GET as getSessionRoute } from "@/app/api/ask/sessions/[id]/route";
 import { GET as modelsRoute } from "@/app/api/ask/models/route";
 import { GET as topicImageRoute } from "@/app/api/topics/[id]/images/[imageId]/route";
-import { ISSUED_DIR, SESSION_CWD, SESSION_ID, isIssued, issuedMarker, toTurns } from "@/lib/ask-sessions";
+import { UUID as SESSION_ID } from "@/Domain";
+import { FsAskSessionStore, ISSUED_DIR, SESSION_CWD, issuedMarker, toTurns } from "@/Infrastructure/Persistence/FsAskSessionStore";
 import { fakeBackend } from "./support/backend";
 
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -43,6 +44,8 @@ afterAll(() => rmSync(TMP, { recursive: true, force: true }));
 beforeEach(() => {
   rmSync(SESSION_CWD, { recursive: true, force: true });
 });
+
+const isIssued = (id: string) => new FsAskSessionStore().isIssued(id);
 
 function issue(id: string) {
   mkdirSync(ISSUED_DIR, { recursive: true });
@@ -72,7 +75,7 @@ function stream(...messages: unknown[]) {
 
 const params = <T,>(value: T) => ({ params: Promise.resolve(value) });
 
-describe("ask-sessions", () => {
+describe("ask session store", () => {
   it("keeps sessions under the OS temp dir and only treats issued UUIDs as issued", () => {
     expect(SESSION_CWD).toBe(path.join(TMP, "second-brain-ask"));
     expect(SESSION_ID.test(SESSION)).toBe(true);

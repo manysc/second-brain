@@ -1,11 +1,13 @@
 // @vitest-environment node
 // Characterizes the HTTP contract between the Next.js app and the FastAPI backend: method, path, body, caching
-// and error handling of every call. These expectations must survive the Clean Architecture refactor unchanged.
-import { describe, expect, it } from "vitest";
-import { notFound } from "next/navigation";
-import * as api from "@/lib/api";
+// and error handling of every call.
+import { describe, expect, it, vi } from "vitest";
+import { NotFoundError } from "@/Application/Errors";
+import { BackendApiClient } from "@/Infrastructure/ExternalServices/BackendApiClient";
 import { CASES, file } from "./support/apiCases";
 import { BACKEND, fakeBackend } from "./support/backend";
+
+const api = new BackendApiClient();
 
 describe("backend API client", () => {
   it.each(CASES)("$name sends $method $path", async ({ run, method, path, body }) => {
@@ -62,17 +64,38 @@ describe("backend API client", () => {
     await expect(api.getTopics()).rejects.toThrow("Backend request failed: /api/topics (503)");
   });
 
-  it("turns a missing topic into Next's notFound()", async () => {
+  it("reports a missing topic as NotFoundError and other failed topic reads as plain errors", async () => {
     fakeBackend({ "GET /api/topics/missing": { status: 404, json: { detail: "Topic not found" } } });
-    await expect(api.getTopicById("missing")).rejects.toMatchObject({ notFound: true });
-    expect(notFound).toHaveBeenCalledOnce();
+    await expect(api.getTopicById("missing")).rejects.toBeInstanceOf(NotFoundError);
+
+    fakeBackend({ "GET /api/topics/t1": { status: 500, body: "x" } });
+    const failed = await api.getTopicById("t1").catch((error: unknown) => error);
+    expect(failed).not.toBeInstanceOf(NotFoundError);
+    expect((failed as Error).message).toBe("Backend request failed: /api/topics/t1 (500)");
   });
 
-  it("passes the raw image response through for the proxy route", async () => {
+  it("hands the image bytes and content type through for the proxy route", async () => {
     fakeBackend({ "GET /api/topics/t1/images/img": { body: new Uint8Array([1, 2, 3]), headers: { "Content-Type": "image/png" } } });
-    const response = await api.fetchTopicImage("t1", "img");
-    expect(response.ok).toBe(true);
-    expect(response.headers.get("Content-Type")).toBe("image/png");
-    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+    const image = await api.loadTopicImage("t1", "img");
+    if (image.kind !== "ok") throw new Error(`expected the image, got ${image.kind}`);
+    expect(image.contentType).toBe("image/png");
+    expect(new Uint8Array(await new Response(image.body).arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("tells a missing image, a failing backend and an unreachable backend apart", async () => {
+    fakeBackend({
+      "GET /api/topics/t1/images/gone": { status: 404, json: { detail: "Image not found" } },
+      "GET /api/topics/t1/images/err": { status: 500, body: "x" },
+    });
+    await expect(api.loadTopicImage("t1", "gone")).resolves.toEqual({ kind: "missing" });
+    await expect(api.loadTopicImage("t1", "err")).resolves.toEqual({ kind: "failed" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+    await expect(api.loadTopicImage("t1", "img")).resolves.toEqual({ kind: "unreachable" });
+  });
+
+  it("talks to API_BASE_URL when it is set", async () => {
+    const backend = fakeBackend();
+    await new BackendApiClient("http://brain.internal:9000").getTopics().catch(() => {});
+    expect(backend.last().url).toBe("http://brain.internal:9000/api/topics");
   });
 });

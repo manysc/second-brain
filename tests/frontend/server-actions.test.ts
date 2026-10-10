@@ -1,11 +1,14 @@
 // @vitest-environment node
 // Characterizes every server action end to end at the network boundary: FormData parsing -> backend request ->
-// cache revalidation -> redirect / return value. The refactor moves these into Presentation controllers backed by
-// use cases; only the import below may change.
+// cache revalidation -> redirect / return value, through the controllers, the use cases and the API client.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { revalidatePath } from "next/cache";
-import * as actions from "@/lib/actions";
+import * as itemActions from "@/Presentation/Controllers/itemActions";
+import * as reviewActions from "@/Presentation/Controllers/reviewActions";
+import * as topicActions from "@/Presentation/Controllers/topicActions";
 import { fakeBackend, form, redirectOf } from "./support/backend";
+
+const actions = { ...topicActions, ...itemActions, ...reviewActions };
 
 const revalidated = () => vi.mocked(revalidatePath).mock.calls.map((args) => args.join("|"));
 const ok = { json: {} };

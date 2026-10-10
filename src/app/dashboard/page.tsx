@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { AppShell } from "@/components/AppShell";
-import { Confidence, KnowledgeCard } from "@/components/KnowledgeCard";
-import { getMeeting, getRecentPriorityEscalations, getTopics } from "@/lib/api";
+import { AppShell } from "@/Presentation/Components/AppShell";
+import { Confidence, KnowledgeCard } from "@/Presentation/Components/KnowledgeCard";
+import { useCases } from "@/composition";
 export default async function Dashboard() {
-  const [meeting, topics, recentEscalations] = await Promise.all([getMeeting(), getTopics(), getRecentPriorityEscalations(14)]);
+  const [meeting, topics, recentEscalations] = await Promise.all([useCases.getLatestMeeting(), useCases.listTopics(), useCases.listRecentEscalations(14)]);
   const actions = meeting.items.filter((item) => item.type === "ACTION");
   const questions = meeting.items.filter((item) => item.type === "QUESTION");
   const decisions = meeting.items.filter((item) => item.type === "DECISION");

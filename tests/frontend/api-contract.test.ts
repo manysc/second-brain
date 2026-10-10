@@ -29,7 +29,7 @@ function operationFor(method: string, pathWithQuery: string) {
 const requests = [
   ...CASES.map(({ name, method, path: p }) => ({ name, method, path: p })),
   { name: "addTopicImage", method: "POST", path: "/api/topics/t1/images" },
-  { name: "fetchTopicImage", method: "GET", path: "/api/topics/t1/images/img" },
+  { name: "loadTopicImage", method: "GET", path: "/api/topics/t1/images/img" },
 ];
 
 describe("frontend/backend contract", () => {

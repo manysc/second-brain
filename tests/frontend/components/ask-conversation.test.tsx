@@ -1,11 +1,13 @@
 // Characterizes the pure helpers behind the /ask conversation view.
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ModelInfo } from "@anthropic-ai/claude-agent-sdk";
-import { citationHref, effortLevelsFor, timeAgo, withCitations } from "@/components/AskConversation";
+import type { AskModel } from "@/Application/DTOs/Ask";
+import { effortLevelsFor } from "@/Application/UseCases/ask";
+import { citationHref, withCitations } from "@/Presentation/Components/AskConversation";
+import { timeAgo } from "@/Presentation/format";
 
 const model = (value: string, levels?: string[]) =>
-  ({ value, displayName: value, description: "", supportedEffortLevels: levels }) as unknown as ModelInfo;
+  ({ value, displayName: value, description: "", supportedEffortLevels: levels }) as AskModel;
 
 afterEach(() => vi.useRealTimers());
 

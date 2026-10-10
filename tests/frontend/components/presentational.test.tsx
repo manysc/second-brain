@@ -3,16 +3,20 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 // every server action becomes a spy; the components only pass them to <form action>
-vi.mock("@/lib/actions", async (importOriginal) =>
-  Object.fromEntries(Object.keys(await importOriginal<object>()).map((name) => [name, vi.fn()])),
+const spies = vi.hoisted(
+  () => async (importOriginal: () => Promise<object>) =>
+    Object.fromEntries(Object.keys(await importOriginal()).map((name) => [name, vi.fn()])),
 );
+vi.mock("@/Presentation/Controllers/itemActions", spies);
+vi.mock("@/Presentation/Controllers/reviewActions", spies);
+vi.mock("@/Presentation/Controllers/topicActions", spies);
 
-import { KnowledgeCard } from "@/components/KnowledgeCard";
-import { NotesSection } from "@/components/NotesSection";
-import { PriorityBadge } from "@/components/PriorityBadge";
-import { StatusBadge, StatusFilterRow, parseStatusFilter } from "@/components/StatusBadge";
-import { TagChip } from "@/components/TagChip";
-import { ItemTags } from "@/components/ItemTags";
+import { KnowledgeCard } from "@/Presentation/Components/KnowledgeCard";
+import { NotesSection } from "@/Presentation/Components/NotesSection";
+import { PriorityBadge } from "@/Presentation/Components/PriorityBadge";
+import { StatusBadge, StatusFilterRow, parseStatusFilter } from "@/Presentation/Components/StatusBadge";
+import { TagChip } from "@/Presentation/Components/TagChip";
+import { ItemTags } from "@/Presentation/Components/ItemTags";
 import { item } from "../support/factories";
 
 const noop = async () => {};

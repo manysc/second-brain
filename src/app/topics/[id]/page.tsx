@@ -1,30 +1,21 @@
 import Link from "next/link";
-import { AppShell } from "@/components/AppShell";
-import { KnowledgeCard } from "@/components/KnowledgeCard";
-import { TopicAssignmentForm } from "@/components/TopicAssignmentForm";
-import { BulkMoveProvider, SelectableItem } from "@/components/BulkTopicMove";
-import { SuggestedItemTopics } from "@/components/SuggestedItemTopics";
-import { PriorityDetailsBadge, PriorityDetailsPanel, PriorityDetailsProvider } from "@/components/PriorityDetails";
-import { PriorityOverrideForm } from "@/components/PriorityOverrideForm";
-import { RelatedTopics } from "@/components/RelatedTopics";
-import { getMeetings, getRelatedTopics, getSuggestedItemTopics, getTopicById, getTopics } from "@/lib/api";
-import { NotesSection } from "@/components/NotesSection";
-import { TopicImages } from "@/components/TopicImages";
-import { TopicTags } from "@/components/TopicTags";
-import { AddItemForm } from "@/components/AddItemForm";
-import { EditItemForm } from "@/components/EditItemForm";
-import {
-  addTopicImageAction,
-  addTopicNoteAction,
-  deleteTopicAction,
-  deleteTopicImageAction,
-  deleteTopicNoteAction,
-  recalculatePriorityAction,
-  setTopicStatusAction,
-  updateTopicAction,
-  updateTopicNoteAction,
-} from "@/lib/actions";
-import type { KnowledgeItem, SuggestionRow } from "@/lib/domain";
+import { AppShell } from "@/Presentation/Components/AppShell";
+import { KnowledgeCard } from "@/Presentation/Components/KnowledgeCard";
+import { TopicAssignmentForm } from "@/Presentation/Components/TopicAssignmentForm";
+import { BulkMoveProvider, SelectableItem } from "@/Presentation/Components/BulkTopicMove";
+import { SuggestedItemTopics } from "@/Presentation/Components/SuggestedItemTopics";
+import { PriorityDetailsBadge, PriorityDetailsPanel, PriorityDetailsProvider } from "@/Presentation/Components/PriorityDetails";
+import { PriorityOverrideForm } from "@/Presentation/Components/PriorityOverrideForm";
+import { RelatedTopics } from "@/Presentation/Components/RelatedTopics";
+import { useCases } from "@/composition";
+import { NotesSection } from "@/Presentation/Components/NotesSection";
+import { TopicImages } from "@/Presentation/Components/TopicImages";
+import { TopicTags } from "@/Presentation/Components/TopicTags";
+import { AddItemForm } from "@/Presentation/Components/AddItemForm";
+import { EditItemForm } from "@/Presentation/Components/EditItemForm";
+import { addTopicImageAction, addTopicNoteAction, deleteTopicAction, deleteTopicImageAction, deleteTopicNoteAction, recalculatePriorityAction, setTopicStatusAction, updateTopicAction, updateTopicNoteAction } from "@/Presentation/Controllers/topicActions";
+import { orNotFound } from "@/Presentation/pageSupport";
+import { type KnowledgeItem, canDeleteTopic, isUncategorized, sortByMeetingDateDesc } from "@/Domain";
 
 const DEFAULT_UNCATEGORIZED_LIMIT = 25;
 const SHOW_MORE_STEP = 50;
@@ -39,48 +30,29 @@ export default async function TopicDetail({
   const { id } = await params;
   const { error, limit: rawLimit } = await searchParams;
   const [topic, topics, meetings, relatedTopics] = await Promise.all([
-    getTopicById(id),
-    getTopics(),
-    getMeetings(),
-    getRelatedTopics(id),
+    orNotFound(useCases.getTopic(id)),
+    useCases.listTopics(),
+    useCases.listMeetings(),
+    useCases.listRelatedTopics(id),
   ]);
-  const suggestions: SuggestionRow[] =
-    topic.name === "Uncategorized"
-      ? (await getSuggestedItemTopics()).map(({ item, candidates, score, confidence }) => ({
-          id: item.id,
-          description: item.description,
-          type: item.type,
-          candidates,
-          score,
-          confidence,
-        }))
-      : [];
+  const uncategorized = isUncategorized(topic);
+  const suggestions = uncategorized ? await useCases.suggestItemTopics() : [];
   const meetingDateById = new Map(meetings.map((m) => [m.id, m.date]));
-  // Items only carry a meetingId, so recency is derived from the parent meeting's date.
-  function sortByMeetingDateDesc(items: KnowledgeItem[]) {
-    return [...items].sort((a, b) => {
-      const dateA = meetingDateById.get(a.meetingId);
-      const dateB = meetingDateById.get(b.meetingId);
-      if (!dateA && !dateB) return 0;
-      if (!dateA) return 1;
-      if (!dateB) return -1;
-      return dateB.localeCompare(dateA);
-    });
-  }
-  const ideas = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "IDEA"));
-  const decisions = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "DECISION"));
-  const actions = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "ACTION"));
-  const questions = sortByMeetingDateDesc(topic.items.filter((i) => i.type === "QUESTION"));
+  const newestFirst = (type: KnowledgeItem["type"]) =>
+    sortByMeetingDateDesc(topic.items.filter((i) => i.type === type), meetingDateById);
+  const ideas = newestFirst("IDEA");
+  const decisions = newestFirst("DECISION");
+  const actions = newestFirst("ACTION");
+  const questions = newestFirst("QUESTION");
   // Uncategorized can hold hundreds of items; each card carries forms and a topic picker, so only the
   // first `limit` per column are rendered (the suggestions panel above is the main way to triage them).
-  const isUncategorized = topic.name === "Uncategorized";
   const parsedLimit = Number.parseInt(rawLimit ?? "", 10);
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : DEFAULT_UNCATEGORIZED_LIMIT;
   function shown(items: KnowledgeItem[]) {
-    return isUncategorized ? items.slice(0, limit) : items;
+    return uncategorized ? items.slice(0, limit) : items;
   }
   function showMore(total: number) {
-    if (!isUncategorized || total <= limit) return null;
+    if (!uncategorized || total <= limit) return null;
     return (
       <p className="show-more">
         Showing {limit} of {total} · <Link href={`/topics/${topic.id}?limit=${limit + SHOW_MORE_STEP}`}>Show more</Link>
@@ -115,8 +87,8 @@ export default async function TopicDetail({
         <form action={deleteTopicAction}>
           <input type="hidden" name="topicId" value={topic.id} />
           <button
-            disabled={topic.items.length > 0}
-            title={topic.items.length > 0 ? "Reassign all items before deleting" : undefined}
+            disabled={!canDeleteTopic(topic)}
+            title={canDeleteTopic(topic) ? undefined : "Reassign all items before deleting"}
           >
             Delete topic
           </button>
@@ -186,11 +158,11 @@ export default async function TopicDetail({
           deleteAction={deleteTopicImageAction}
         />
       </section>
-      {topic.name === "Uncategorized" ? (
+      {uncategorized ? (
         <SuggestedItemTopics
           suggestions={suggestions}
           topics={topics
-            .filter((t) => t.name !== "Uncategorized")
+            .filter((t) => !isUncategorized(t))
             .map(({ id, name }) => ({ id, name }))
             .sort((a, b) => a.name.localeCompare(b.name))}
           returnTo={`/topics/${topic.id}`}
