@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.application.dtos import NewItem
-from app.domain.entities.knowledge_item import ItemEdit
 from app.domain.exceptions import TooManyTags, TopicNotFound
 from app.presentation.api.dependencies import App, to_schema, to_schemas
 from app.presentation.api.schemas import (
-    ItemCreate,
     ItemDetail,
     ItemsTopicBulkUpdate,
     ItemTopicUpdate,
@@ -59,15 +56,7 @@ def set_items_topic(payload: ItemsTopicBulkUpdate, app: App) -> list[KnowledgeIt
 
 @router.patch("/api/items/{item_id}", response_model=KnowledgeItem)
 def update_item(item_id: str, payload: ItemUpdate, app: App) -> KnowledgeItem:
-    changes = ItemEdit(
-        fields=frozenset(payload.model_fields_set),
-        type=payload.type,
-        description=payload.description,
-        owner=payload.owner,
-        due_date=payload.due_date,
-        rationale=payload.rationale,
-    )
-    return to_schema(KnowledgeItem, app.update_item(item_id, changes))
+    return to_schema(KnowledgeItem, app.update_item(item_id, payload.to_item_edit()))
 
 
 @router.delete("/api/items/{item_id}", status_code=204)
@@ -113,12 +102,3 @@ def delete_item_note(item_id: str, note_id: str, app: App) -> KnowledgeItem:
 def update_item_note(item_id: str, note_id: str, payload: NoteCreate, app: App) -> KnowledgeItem:
     return to_schema(KnowledgeItem, app.edit_item_note(item_id, note_id, payload.body))
 
-
-def new_item(payload: ItemCreate) -> NewItem:
-    return NewItem(
-        type=payload.type,
-        description=payload.description,
-        owner=payload.owner,
-        due_date=payload.due_date,
-        rationale=payload.rationale,
-    )

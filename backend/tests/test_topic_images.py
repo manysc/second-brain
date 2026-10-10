@@ -7,10 +7,15 @@ import pytest
 from fastapi.testclient import TestClient
 from moto import mock_aws
 
-from app import data, db, s3_store
-from app.db_models import TopicImageRow
+from app.domain.exceptions import ImageTooLarge, TopicNotFound, UnsupportedImageType
+from app.domain.value_objects.image_upload import MAX_IMAGE_BYTES
+from tests.support import brain
+from app.infrastructure.persistence import database as db
+from app.infrastructure.external_services import s3_storage as s3_store
+from app.infrastructure.persistence.orm_models import TopicImageRow
 from app.main import app
-from tests.test_item_priority import _cleanup, _make_topic_with_item, db_ready  # noqa: F401
+from tests.support import cleanup as _cleanup
+from tests.support import make_topic_with_item as _make_topic_with_item
 
 BUCKET = "test-second-brain"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
@@ -42,18 +47,19 @@ def _keys(client) -> list[str]:
 def test_add_and_delete_image(db_ready, s3):
     topic, meeting_id, _ = _make_topic_with_item()
     try:
-        added = data.add_topic_image(topic.id, "C:\\pics\\diagram.png", PNG)
+        added = brain.add_topic_image(topic.id, "C:\\pics\\diagram.png", PNG)
         assert added is not None and len(added.images) == 1
         image = added.images[0]
         assert (image.filename, image.content_type, image.size) == ("diagram.png", "image/png", len(PNG))
 
         assert _keys(s3) == [f"images/topics/{topic.id}/{image.id}.png"]
-        assert data.get_topic_image(topic.id, image.id) == (PNG, "image/png")
+        served = brain.get_topic_image(topic.id, image.id)
+        assert (served.body, served.content_type) == (PNG, "image/png")
 
-        after = data.delete_topic_image(topic.id, image.id)
-        assert after is not None and after.images == []
+        after = brain.delete_topic_image(topic.id, image.id)
+        assert after is not None and list(after.images) == []
         assert _keys(s3) == []
-        assert data.get_topic_image(topic.id, image.id) is None
+        assert brain.get_topic_image(topic.id, image.id) is None
     finally:
         _cleanup(topic.id, meeting_id)
 
@@ -61,7 +67,7 @@ def test_add_and_delete_image(db_ready, s3):
 def test_content_type_comes_from_the_bytes_not_the_client(db_ready, s3):
     topic, meeting_id, _ = _make_topic_with_item()
     try:
-        added = data.add_topic_image(topic.id, "photo.png", JPEG)
+        added = brain.add_topic_image(topic.id, "photo.png", JPEG)
         assert added is not None
         assert added.images[0].content_type == "image/jpeg"
         assert _keys(s3)[0].endswith(".jpg")
@@ -72,63 +78,65 @@ def test_content_type_comes_from_the_bytes_not_the_client(db_ready, s3):
 def test_rejects_non_images_and_oversize(db_ready, s3):
     topic, meeting_id, _ = _make_topic_with_item()
     try:
-        with pytest.raises(data.UnsupportedImageType):
-            data.add_topic_image(topic.id, "notes.png", b"just some text, not a png")
-        with pytest.raises(data.ImageTooLarge):
-            data.add_topic_image(topic.id, "big.png", PNG + b"\x00" * data.MAX_IMAGE_BYTES)
+        with pytest.raises(UnsupportedImageType):
+            brain.add_topic_image(topic.id, "notes.png", b"just some text, not a png")
+        with pytest.raises(ImageTooLarge):
+            brain.add_topic_image(topic.id, "big.png", PNG + b"\x00" * MAX_IMAGE_BYTES)
         assert _keys(s3) == []
-        assert data.get_topic_by_id(topic.id).images == []
+        assert list(brain.get_topic(topic.id).images) == []
     finally:
         _cleanup(topic.id, meeting_id)
 
 
-def test_missing_topic_returns_none(db_ready, s3):
-    assert data.add_topic_image("no-such-topic", "a.png", PNG) is None
-    assert data.delete_topic_image("no-such-topic", "whatever") is None
+def test_missing_topic_is_reported_and_stores_nothing(db_ready, s3):
+    with pytest.raises(TopicNotFound):
+        brain.add_topic_image("no-such-topic", "a.png", PNG)
+    with pytest.raises(TopicNotFound):
+        brain.delete_topic_image("no-such-topic", "whatever")
     assert _keys(s3) == []
 
 
 def test_image_of_another_topic_is_not_served(db_ready, s3):
     topic, meeting_id, _ = _make_topic_with_item()
-    other = data.create_topic("image-other-topic")
+    other = brain.create_topic("image-other-topic")
     try:
-        added = data.add_topic_image(topic.id, "a.png", PNG)
-        assert data.get_topic_image(other.id, added.images[0].id) is None
+        added = brain.add_topic_image(topic.id, "a.png", PNG)
+        assert brain.get_topic_image(other.id, added.images[0].id) is None
     finally:
-        data.delete_topic(other.id)
+        brain.delete_topic(other.id)
         _cleanup(topic.id, meeting_id)
 
 
 def test_deleting_a_topic_removes_its_objects(db_ready, s3):
-    topic = data.create_topic("image-doomed-topic")
-    data.add_topic_image(topic.id, "a.png", PNG)
+    topic = brain.create_topic("image-doomed-topic")
+    brain.add_topic_image(topic.id, "a.png", PNG)
     assert len(_keys(s3)) == 1
-    assert data.delete_topic(topic.id) is True
+    brain.delete_topic(topic.id)
     assert _keys(s3) == []
     with db.get_session() as session:
         assert session.query(TopicImageRow).filter_by(topic_id=topic.id).count() == 0
 
 
 def test_merge_moves_images_to_the_target(db_ready, s3):
-    source = data.create_topic("image-merge-source")
-    target = data.create_topic("image-merge-target")
+    source = brain.create_topic("image-merge-source")
+    target = brain.create_topic("image-merge-target")
     try:
-        data.add_topic_image(source.id, "a.png", PNG)
-        merged = data.merge_topics(source.id, target.id)
+        brain.add_topic_image(source.id, "a.png", PNG)
+        merged = brain.merge_topics(source.id, target.id)
         assert [i.filename for i in merged.images] == ["a.png"]
         assert len(_keys(s3)) == 1  # the object is kept: merging is not a delete
     finally:
-        data.delete_topic(target.id)
+        brain.delete_topic(target.id)
 
 
 def test_image_routes(db_ready, s3):
     client = TestClient(app)  # no `with`: skips the startup ingestion
-    topic = data.create_topic("image-route-topic")
+    topic = brain.create_topic("image-route-topic")
     try:
         url = f"/api/topics/{topic.id}/images"
         assert client.post("/api/topics/nope/images", files={"file": ("a.png", PNG, "image/png")}).status_code == 404
         assert client.post(url, files={"file": ("a.png", b"not an image", "image/png")}).status_code == 415
-        too_big = PNG + b"\x00" * data.MAX_IMAGE_BYTES
+        too_big = PNG + b"\x00" * MAX_IMAGE_BYTES
         assert client.post(url, files={"file": ("a.png", too_big, "image/png")}).status_code == 413
 
         created = client.post(url, files={"file": ("a.png", PNG, "image/png")})
@@ -144,4 +152,4 @@ def test_image_routes(db_ready, s3):
         assert deleted.status_code == 200 and deleted.json()["images"] == []
         assert client.get(f"{url}/{image_id}").status_code == 404
     finally:
-        data.delete_topic(topic.id)
+        brain.delete_topic(topic.id)

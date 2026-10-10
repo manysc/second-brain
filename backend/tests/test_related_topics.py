@@ -1,4 +1,4 @@
-"""Integration tests for data.related_topics against a real Postgres+pgvector instance.
+"""Integration tests for brain.get_related_topics against a real Postgres+pgvector instance.
 
 Auto-skips (module-scoped) if DATABASE_URL isn't reachable, mirroring test_topics.py.
 """
@@ -7,19 +7,11 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy.exc import OperationalError
 
-from app import data, db
-from app.db_models import EMBEDDING_DIM, KnowledgeItemRow, MeetingRow
-
-
-@pytest.fixture(scope="module")
-def db_ready():
-    try:
-        db.init_db()
-    except OperationalError:
-        pytest.skip("Postgres is not reachable at DATABASE_URL; skipping DB integration tests")
-    yield
+from app.domain.exceptions import TopicNotFound
+from tests.support import brain
+from app.infrastructure.persistence import database as db
+from app.infrastructure.persistence.orm_models import EMBEDDING_DIM, KnowledgeItemRow, MeetingRow
 
 
 def _unique_name(prefix: str) -> str:
@@ -50,10 +42,10 @@ def _item(meeting_id: str, topic_id: str, embedding: list[float]) -> KnowledgeIt
 
 def test_related_topics(db_ready):
     meeting_id = _unique_name("related-meeting")
-    target = data.create_topic(_unique_name("related-target"))
-    close = data.create_topic(_unique_name("related-close"))
-    far = data.create_topic(_unique_name("related-far"))
-    empty = data.create_topic(_unique_name("related-empty"))
+    target = brain.create_topic(_unique_name("related-target"))
+    close = brain.create_topic(_unique_name("related-close"))
+    far = brain.create_topic(_unique_name("related-far"))
+    empty = brain.create_topic(_unique_name("related-empty"))
     try:
         with db.get_session() as session:
             session.add(MeetingRow(id=meeting_id, title="Related test", date="2026-09-01", source_url="https://example.com"))
@@ -63,7 +55,7 @@ def test_related_topics(db_ready):
             session.add(_item(meeting_id, far.id, _vector(0.0, 1.0)))
             session.commit()
 
-        related = data.related_topics(target.id, limit=100)
+        related = brain.get_related_topics(target.id, limit=100)
         assert related is not None
         ids = [r.id for r in related]
         assert close.id in ids
@@ -76,8 +68,9 @@ def test_related_topics(db_ready):
         assert [r.similarity for r in related] == sorted((r.similarity for r in related), reverse=True)
 
         # a topic without embedded items has nothing to compare
-        assert data.related_topics(empty.id) == []
-        assert data.related_topics("no-such-topic") is None
+        assert brain.get_related_topics(empty.id) == []
+        with pytest.raises(TopicNotFound):
+            brain.get_related_topics("no-such-topic")
     finally:
         with db.get_session() as session:
             meeting = session.get(MeetingRow, meeting_id)
@@ -85,4 +78,4 @@ def test_related_topics(db_ready):
                 session.delete(meeting)  # cascades to the synthetic items
                 session.commit()
         for topic in (target, close, far, empty):
-            data.delete_topic(topic.id)
+            brain.delete_topic(topic.id)

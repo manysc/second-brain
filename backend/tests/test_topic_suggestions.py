@@ -3,14 +3,21 @@ from __future__ import annotations
 
 import pytest
 
-from app.topic_suggestions import (
+from app.domain.services.topic_ranking import (
     DESCRIPTION_MATCH_GATE,
     HIGH_CONFIDENCE_SCORE,
     MEDIUM_CONFIDENCE_SCORE,
     TopicProfile,
-    TopicRanker,
     confidence_band,
 )
+from app.domain.services.topic_ranking import TopicRanker as DomainTopicRanker
+from app.infrastructure.external_services.tfidf_description_index import build_tfidf_description_index
+
+
+def TopicRanker(profiles):  # noqa: N802  (reads like the class it wraps)
+    """The ranker as production wires it: with the TF-IDF description index for the lexical signal."""
+    return DomainTopicRanker(profiles, build_tfidf_description_index)
+
 
 Q = [1.0, 0.0, 0.0, 0.0]
 

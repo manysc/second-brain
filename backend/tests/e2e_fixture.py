@@ -15,8 +15,9 @@ from datetime import date
 from dotenv import load_dotenv
 from sqlalchemy import delete, select
 
-from app import data, db
-from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
+from tests.support import brain
+from app.infrastructure.persistence import database as db
+from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
 from app.models import ItemCreate
 
 
@@ -52,9 +53,9 @@ def seed(run: str) -> dict[str, object]:
                 )
             )
         session.commit()
-    topic = data.create_topic(names["topic"])
-    target = data.create_topic(names["target"])
-    item = data.create_item(topic.id, ItemCreate(type="ACTION", description=f"{_ITEM} ({run})"))
+    topic = brain.create_topic(names["topic"])
+    target = brain.create_topic(names["target"])
+    item = brain.create_item(topic.id, ItemCreate(type="ACTION", description=f"{_ITEM} ({run})"))
     assert item is not None
     return {
         "run": run,
@@ -87,7 +88,7 @@ def cleanup(run: str) -> None:
         session.execute(delete(MeetingRow).where(MeetingRow.id == names["meeting"]))
         session.commit()
     for topic_id in topic_ids:
-        data.delete_topic(topic_id)  # also removes the topic's images from S3
+        brain.delete_topic(topic_id)  # also removes the topic's images from S3
 
 
 if __name__ == "__main__":

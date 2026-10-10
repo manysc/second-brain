@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.application.dtos import NewItem
+from app.domain.entities.knowledge_item import ItemEdit
 from app.domain.value_objects.tag import (  # noqa: F401  (re-exported)
     MAX_TAG_LENGTH,
     MAX_TAGS,
@@ -101,6 +103,15 @@ class ItemCreate(CamelModel):
         v = v.strip() if v else None
         return v or None
 
+    def to_new_item(self) -> NewItem:
+        return NewItem(
+            type=self.type,
+            description=self.description,
+            owner=self.owner,
+            due_date=self.due_date,
+            rationale=self.rationale,
+        )
+
 
 class ItemUpdate(CamelModel):
     """Partial edit: omitted fields are left alone; an explicit null/blank clears owner, due date or rationale."""
@@ -137,6 +148,17 @@ class ItemUpdate(CamelModel):
         if "description" in self.model_fields_set and self.description is None:
             raise ValueError("description cannot be null")
         return self
+
+    def to_item_edit(self) -> ItemEdit:
+        """Only the fields the request actually set are part of the edit."""
+        return ItemEdit(
+            fields=frozenset(self.model_fields_set),
+            type=self.type,
+            description=self.description,
+            owner=self.owner,
+            due_date=self.due_date,
+            rationale=self.rationale,
+        )
 
 
 class KnowledgeItem(CamelModel):

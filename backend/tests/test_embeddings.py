@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from app import embeddings
+from app.infrastructure.external_services import embeddings
 
 
 class _CountingModel:

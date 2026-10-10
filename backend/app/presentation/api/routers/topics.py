@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException, Query, Response, UploadFile
 from app.domain.exceptions import TooManyTags
 from app.domain.value_objects.image_upload import MAX_IMAGE_BYTES
 from app.presentation.api.dependencies import App, to_schema, to_schemas
-from app.presentation.api.routers.items import new_item
 from app.presentation.api.schemas import (
     ItemCreate,
     ItemTopicSuggestion,
@@ -105,7 +104,7 @@ def remove_topic_tag(topic_id: str, app: App, tag: str = Query(min_length=1)) ->
 
 @router.post("/api/topics/{topic_id}/items", response_model=KnowledgeItem, status_code=201)
 def create_topic_item(topic_id: str, payload: ItemCreate, app: App) -> KnowledgeItem:
-    return to_schema(KnowledgeItem, app.create_item(topic_id, new_item(payload)))
+    return to_schema(KnowledgeItem, app.create_item(topic_id, payload.to_new_item()))
 
 
 @router.delete("/api/topics/{topic_id}/notes/{note_id}", response_model=Topic)

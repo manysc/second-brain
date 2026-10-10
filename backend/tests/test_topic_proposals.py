@@ -5,31 +5,25 @@ db_ready pattern (auto-skips if Postgres isn't reachable).
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import OperationalError
 
-from app import data, db, ingest
-from app.db_models import KnowledgeItemRow, MeetingRow, TopicRow
-from app.models import Evidence, KnowledgeItem, Meeting
-
-
-@pytest.fixture(scope="module")
-def db_ready():
-    try:
-        db.init_db()
-    except OperationalError:
-        pytest.skip("Postgres is not reachable at DATABASE_URL; skipping DB integration tests")
-    yield
+from app.domain.exceptions import TopicNotFound
+from app.domain.value_objects.evidence import Evidence
+from app.domain.value_objects.extraction import ExtractedItem, ExtractedMeeting
+from app.infrastructure.persistence import database as db
+from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, TopicRow
+from tests.support import brain, merge_extract
 
 
 def _unique(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
-def _meeting(meeting_id: str, theme: str, description: str = "Quokka migration rollout schedule") -> Meeting:
-    item = KnowledgeItem(
+def _meeting(meeting_id: str, theme: str, description: str = "Quokka migration rollout schedule") -> ExtractedMeeting:
+    item = ExtractedItem(
         id=f"{meeting_id}:idea-1",
         type="IDEA",
         description=description,
@@ -39,17 +33,15 @@ def _meeting(meeting_id: str, theme: str, description: str = "Quokka migration r
         evidence=Evidence(speaker="Ada", timestamp="00:01:00", quote=description, context=None),
         meeting_id=meeting_id,
     )
-    return Meeting(
-        id=meeting_id, title="Proposal test meeting", date="2026-09-01", source_url="https://example.com",
-        items=[item], review_candidates=[], topics=[],
+    return ExtractedMeeting(
+        id=meeting_id, title="Proposal test meeting", date="2026-09-01", source_url="https://example.com", items=[item]
     )
 
 
-def _multi_item_meeting(meeting_id: str, specs: list[tuple[str, str, list[str], str]]) -> Meeting:
+def _multi_item_meeting(meeting_id: str, specs: list[tuple[str, str, list[str], str]]) -> ExtractedMeeting:
     """specs: (candidate id, theme, related candidate ids, description), in extract order."""
-    meeting = _meeting(meeting_id, "unused")
-    meeting.items = [
-        KnowledgeItem(
+    items = [
+        ExtractedItem(
             id=f"{meeting_id}:{cid}", type="IDEA", description=description, theme=theme, status="Open",
             confidence="HIGH", related_ids=related,
             evidence=Evidence(speaker="Ada", timestamp="00:01:00", quote=description, context=None),
@@ -57,12 +49,12 @@ def _multi_item_meeting(meeting_id: str, specs: list[tuple[str, str, list[str], 
         )
         for cid, theme, related, description in specs
     ]
-    return meeting
+    return replace(_meeting(meeting_id, "unused"), items=tuple(items))
 
 
-def _ingest(meeting: Meeting) -> None:
+def _ingest(meeting: ExtractedMeeting) -> None:
     with db.get_session() as session:
-        ingest.upsert_meeting(session, meeting)
+        merge_extract(session, meeting)
         session.commit()
 
 
@@ -99,7 +91,7 @@ def test_ingestion_does_not_create_topic_for_new_theme(db_ready):
         item = _item(f"{meeting_id}:idea-1")
         assert item.topic_id is not None
         assert item.suggested_topic == theme or item.suggested_topic is None  # None only if matched an existing topic
-        proposals = {p.name: p for p in data.topic_proposals()}
+        proposals = {p.name: p for p in brain.list_topic_proposals()}
         assert (theme in proposals) == (item.suggested_topic == theme)
     finally:
         _cleanup(meeting_id, [])
@@ -107,7 +99,7 @@ def test_ingestion_does_not_create_topic_for_new_theme(db_ready):
 
 def test_ingestion_files_item_under_existing_topic_with_matching_name(db_ready):
     meeting_id = _unique("proposal-meeting")
-    topic = data.create_topic(_unique("existing-topic"))
+    topic = brain.create_topic(_unique("existing-topic"))
     try:
         _ingest(_meeting(meeting_id, topic.name.upper()))
         item = _item(f"{meeting_id}:idea-1")
@@ -124,7 +116,7 @@ def test_accept_proposal_creates_topic_only_on_acceptance_and_allows_rename(db_r
         item_id = f"{meeting_id}:idea-1"
         if _item(item_id).suggested_topic is None:
             pytest.skip("item matched an existing topic semantically in this database")
-        data.accept_topic_proposal(theme, topic_name=renamed)
+        brain.accept_topic_proposal(theme, topic_name=renamed)
         created = _topic_named(renamed)
         assert created is not None
         assert _topic_named(theme) is None
@@ -136,13 +128,13 @@ def test_accept_proposal_creates_topic_only_on_acceptance_and_allows_rename(db_r
 
 def test_accept_proposal_can_be_redirected_to_existing_topic(db_ready):
     meeting_id, theme = _unique("proposal-meeting"), _unique("novel-theme")
-    target = data.create_topic(_unique("target-topic"))
+    target = brain.create_topic(_unique("target-topic"))
     try:
         _ingest(_meeting(meeting_id, theme))
         item_id = f"{meeting_id}:idea-1"
         if _item(item_id).suggested_topic is None:
             pytest.skip("item matched an existing topic semantically in this database")
-        data.accept_topic_proposal(theme, existing_topic_id=target.id)
+        brain.accept_topic_proposal(theme, existing_topic_id=target.id)
         assert _topic_named(theme) is None
         assert _item(item_id).topic_id == target.id
     finally:
@@ -157,7 +149,7 @@ def test_reject_proposal_keeps_item_out_of_a_new_topic_and_survives_reingest(db_
         item_id = f"{meeting_id}:idea-1"
         if _item(item_id).suggested_topic is None:
             pytest.skip("item matched an existing topic semantically in this database")
-        assert data.reject_topic_proposal(theme) >= 1
+        assert brain.reject_topic_proposal(theme) >= 1
         _ingest(meeting)  # re-ingest must not resurrect the proposal
         assert _item(item_id).suggested_topic is None
         assert _topic_named(theme) is None
@@ -177,7 +169,7 @@ def _ingest_related(specs_for, existing_topic):
 
 
 def test_related_item_later_in_extract_is_found(db_ready):
-    topic = data.create_topic(_unique("existing-topic"))
+    topic = brain.create_topic(_unique("existing-topic"))
     meeting_id = None
     try:
         # B (novel theme) comes first and links forward to A, which matches the existing topic by name
@@ -191,11 +183,11 @@ def test_related_item_later_in_extract_is_found(db_ready):
         b = _item(f"{meeting_id}:b")
         assert (b.topic_id, b.suggested_topic) == (topic.id, None)
     finally:
-        _cleanup(meeting_id, [topic.name]) if meeting_id else data.delete_topic(topic.id)
+        _cleanup(meeting_id, [topic.name]) if meeting_id else brain.delete_topic(topic.id)
 
 
 def test_related_link_is_followed_in_reverse_direction(db_ready):
-    topic = data.create_topic(_unique("existing-topic"))
+    topic = brain.create_topic(_unique("existing-topic"))
     meeting_id = None
     try:
         # A links to B; B (novel theme) declares no link back
@@ -209,11 +201,11 @@ def test_related_link_is_followed_in_reverse_direction(db_ready):
         b = _item(f"{meeting_id}:b")
         assert (b.topic_id, b.suggested_topic) == (topic.id, None)
     finally:
-        _cleanup(meeting_id, [topic.name]) if meeting_id else data.delete_topic(topic.id)
+        _cleanup(meeting_id, [topic.name]) if meeting_id else brain.delete_topic(topic.id)
 
 
 def test_related_chain_resolves_regardless_of_order(db_ready):
-    topic = data.create_topic(_unique("existing-topic"))
+    topic = brain.create_topic(_unique("existing-topic"))
     meeting_id = None
     try:
         meeting_id, _ = _ingest_related(
@@ -228,7 +220,7 @@ def test_related_chain_resolves_regardless_of_order(db_ready):
             item = _item(f"{meeting_id}:{cid}")
             assert (item.topic_id, item.suggested_topic) == (topic.id, None), cid
     finally:
-        _cleanup(meeting_id, [topic.name]) if meeting_id else data.delete_topic(topic.id)
+        _cleanup(meeting_id, [topic.name]) if meeting_id else brain.delete_topic(topic.id)
 
 
 def test_items_related_only_to_each_other_stay_proposals(db_ready):
@@ -251,7 +243,7 @@ def test_items_related_only_to_each_other_stay_proposals(db_ready):
 
 
 def _add_review_candidate(meeting_id: str, description: str) -> str:
-    from app.db_models import ReviewCandidateRow
+    from app.infrastructure.persistence.orm_models import ReviewCandidateRow
 
     candidate_id = f"{meeting_id}:review-1"
     with db.get_session() as session:
@@ -269,7 +261,7 @@ def _add_review_candidate(meeting_id: str, description: str) -> str:
 
 
 def _delete_candidate_meeting(meeting_id: str) -> None:
-    from app.db_models import ReviewCandidateRow
+    from app.infrastructure.persistence.orm_models import ReviewCandidateRow
 
     with db.get_session() as session:
         for row in session.execute(select(ReviewCandidateRow).where(ReviewCandidateRow.meeting_id == meeting_id)).scalars():
@@ -280,10 +272,10 @@ def _delete_candidate_meeting(meeting_id: str) -> None:
 
 def test_accept_review_candidate_into_chosen_topic(db_ready):
     meeting_id = _unique("review-meeting")
-    topic = data.create_topic(_unique("chosen-topic"))
+    topic = brain.create_topic(_unique("chosen-topic"))
     try:
         candidate_id = _add_review_candidate(meeting_id, _DESCRIPTIONS[2])
-        data.set_review_status(candidate_id, "ACCEPTED", topic_id=topic.id)
+        brain.decide_review_candidate(candidate_id, "ACCEPTED", topic_id=topic.id)
         with db.get_session() as session:
             item = session.execute(select(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id == meeting_id)).scalar_one()
         assert (item.topic_id, item.theme) == (topic.id, topic.name)
@@ -298,11 +290,11 @@ def test_pending_review_candidates_drops_decided_ones(db_ready):
     meeting_id = _unique("review-meeting")
     try:
         candidate_id = _add_review_candidate(meeting_id, _DESCRIPTIONS[2])
-        pending = {c.id: c for c in data.pending_review_candidates()}
+        pending = {c.id: c for c in brain.list_pending_review()}
         assert pending[candidate_id].status == "PENDING"
         assert all(c.status == "PENDING" for c in pending.values())
-        data.set_review_status(candidate_id, "REJECTED")
-        assert candidate_id not in {c.id for c in data.pending_review_candidates()}
+        brain.decide_review_candidate(candidate_id, "REJECTED")
+        assert candidate_id not in {c.id for c in brain.list_pending_review()}
     finally:
         _delete_candidate_meeting(meeting_id)
 
@@ -311,9 +303,9 @@ def test_accept_review_candidate_with_blank_topic_uses_uncategorized_and_bad_top
     meeting_id = _unique("review-meeting")
     try:
         candidate_id = _add_review_candidate(meeting_id, _DESCRIPTIONS[2])
-        with pytest.raises(ValueError):
-            data.set_review_status(candidate_id, "ACCEPTED", topic_id="no-such-topic")
-        data.set_review_status(candidate_id, "ACCEPTED", topic_id="")
+        with pytest.raises(TopicNotFound):
+            brain.decide_review_candidate(candidate_id, "ACCEPTED", topic_id="no-such-topic")
+        brain.decide_review_candidate(candidate_id, "ACCEPTED", topic_id="")
         with db.get_session() as session:
             item = session.execute(select(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id == meeting_id)).scalar_one()
             assert session.get(TopicRow, item.topic_id).name == "Uncategorized"
@@ -333,14 +325,14 @@ def test_topic_ranker_is_reused_until_its_inputs_change(db_ready):
         return build_tfidf_description_index(descriptions)
 
     cache = TopicRankerCache(counting_index)
-    topic = data.create_topic(_unique("ranker-cache-topic"))
+    topic = brain.create_topic(_unique("ranker-cache-topic"))
     try:
         with SqlAlchemyUnitOfWork() as uow:
             first = cache.get(uow)
             assert cache.get(uow) is first
         assert len(builds) == 1
 
-        data.add_topic_tag(topic.id, "cache-buster")
+        brain.add_topic_tag(topic.id, "cache-buster")
         with SqlAlchemyUnitOfWork() as uow:
             assert cache.get(uow) is not first
         assert len(builds) == 2
@@ -351,21 +343,18 @@ def test_topic_ranker_is_reused_until_its_inputs_change(db_ready):
 
 
 def test_candidates_get_a_suggested_topic_only_for_close_matches(db_ready):
-    from app.models import ReviewCandidate
-
-    meeting_id = _unique("review-meeting")
-    topic = data.create_topic(_unique("hint-topic"))
+    meeting_id, close_meeting, far_meeting = _unique("review-meeting"), _unique("review-close"), _unique("review-far")
+    topic = brain.create_topic(_unique("hint-topic"))
     try:
         _ingest(_meeting(meeting_id, topic.name))  # gives the topic an embedded item
-        evidence = Evidence(speaker=None, timestamp=None, quote="q", context=None)
+        close_id = _add_review_candidate(close_meeting, "Quokka migration rollout schedule")
+        far_id = _add_review_candidate(far_meeting, "zzz qqq xxx 12345")
 
-        def candidate(cid: str, description: str) -> ReviewCandidate:
-            return ReviewCandidate(id=cid, type="IDEA", description=description, reason="r", confidence="LOW", evidence=evidence)
-
-        close, far = data.with_suggested_topics(
-            [candidate("close", "Quokka migration rollout schedule"), candidate("far", "zzz qqq xxx 12345")]
-        )
-        assert close.suggested_topic_id == topic.id or close.suggested_topic_id is not None  # another topic may be closer
+        pending = {candidate.id: candidate for candidate in brain.list_pending_review()}
+        close, far = pending[close_id], pending[far_id]
+        assert close.suggested_topic_id is not None  # ours, unless another topic is closer still
         assert far.suggested_topic_id is None or far.suggested_topic_id != topic.id
     finally:
+        _delete_candidate_meeting(close_meeting)
+        _delete_candidate_meeting(far_meeting)
         _cleanup(meeting_id, [topic.name])

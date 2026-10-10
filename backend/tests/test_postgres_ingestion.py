@@ -11,10 +11,13 @@ import boto3
 import pytest
 from moto import mock_aws
 from sqlalchemy import delete, select
-from sqlalchemy.exc import OperationalError
 
-from app import data, db, ingest, s3_store
-from app.db_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
+from app.application.dtos import IngestSummary, KnowledgeItemDTO
+from app.infrastructure.external_services import embeddings
+from app.infrastructure.external_services import s3_storage as s3_store
+from app.infrastructure.persistence import database as db
+from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
+from tests.support import brain, ingest_everything
 
 DATA_DIR = Path(__file__).resolve().parent / "fixtures"
 BUCKET = "test-bucket"
@@ -24,15 +27,6 @@ FILES = [
     "synthetic-sync-a.json",
     "synthetic-sync-b.json",
 ]
-
-
-@pytest.fixture(scope="module")
-def db_ready():
-    try:
-        db.init_db()
-    except OperationalError:
-        pytest.skip("Postgres is not reachable at DATABASE_URL; skipping DB integration tests")
-    yield
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -61,6 +55,10 @@ def _remove_fixture_meetings(db_ready):
         session.commit()
 
 
+def _items(meetings):
+    return [item for meeting in meetings for item in meeting.items]
+
+
 def _upload_fixtures(client) -> None:
     client.create_bucket(Bucket=BUCKET)
     for filename in FILES:
@@ -82,7 +80,7 @@ def seeded_meetings(db_ready, monkeypatch):
         client = boto3.client("s3", region_name="us-east-1")
         _upload_fixtures(client)
         with db.get_session() as session:
-            count = ingest.ingest_all_from_s3(session)
+            count = ingest_everything(session).processed
             session.commit()
 
     # rows stay for the rest of the module (ingestion is idempotent); _remove_fixture_meetings cleans up
@@ -91,11 +89,11 @@ def seeded_meetings(db_ready, monkeypatch):
 
 def test_ingest_all_from_s3_populates_postgres(seeded_meetings):
     assert seeded_meetings == 3
-    meetings = data.load_meetings()
+    meetings = brain.list_meetings()
     # the shared dev database may already hold other meetings, so only require ours to be present
     assert {Path(name).stem.replace(".", "-") for name in FILES} <= {meeting.id for meeting in meetings}
-    assert len(data.all_items(meetings)) > 0
-    assert len(data.all_review_candidates(meetings)) > 0
+    assert len(_items(meetings)) > 0
+    assert any(meeting.review_candidates for meeting in meetings)
 
 
 def test_embeddings_are_populated_with_expected_dimension(seeded_meetings):
@@ -108,19 +106,20 @@ def test_embeddings_are_populated_with_expected_dimension(seeded_meetings):
 
 
 def test_semantic_similar_items_excludes_self_and_respects_limit(seeded_meetings):
-    meetings = data.load_meetings()
-    item = data.all_items(meetings)[0]
-    similar = data.semantic_similar_items(item, limit=3)
+    meetings = brain.list_meetings()
+    item = _items(meetings)[0]
+    similar = brain.find_similar_items(item, limit=3)
     assert len(similar) <= 3
     assert all(candidate.id != item.id for candidate in similar)
 
 
 def test_search_returns_closest_matches_and_related_topics(seeded_meetings):
-    meetings = data.load_meetings()
-    item = data.all_items(meetings)[0]
-    items, topics = data.search(item.description, limit=3)
+    meetings = brain.list_meetings()
+    item = _items(meetings)[0]
+    result = brain.search(item.description, limit=3)
+    items, topics = result.items, result.topics
     assert len(items) <= 3
-    assert all(isinstance(candidate, type(item)) for candidate in items)
+    assert all(isinstance(candidate, KnowledgeItemDTO) for candidate in items)
     assert item.id in {candidate.id for candidate in items}
     # results are ranked confidence-first (HIGH before MEDIUM before LOW)
     confidence_rank = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
@@ -140,7 +139,7 @@ def test_ingestion_is_idempotent(seeded_meetings):
         client = boto3.client("s3", region_name="us-east-1")
         _upload_fixtures(client)
         with db.get_session() as session:
-            ingest.ingest_all_from_s3(session)
+            ingest_everything(session).processed
             session.commit()
 
     with db.get_session() as session:
@@ -148,19 +147,19 @@ def test_ingestion_is_idempotent(seeded_meetings):
     assert before == after
 
 
-def _reingest_fixtures(session) -> ingest.IngestSummary:
+def _reingest_fixtures(session) -> IngestSummary:
     with mock_aws():
         client = boto3.client("s3", region_name="us-east-1")
         _upload_fixtures(client)
-        result = ingest._ingest_all(session)
+        result = ingest_everything(session)
         session.commit()
     return result
 
 
 def _record_embeddings(monkeypatch) -> list[list[str]]:
     embedded: list[list[str]] = []
-    real_embed = ingest.embeddings.embed_texts
-    monkeypatch.setattr(ingest.embeddings, "embed_texts", lambda texts: embedded.append(texts) or real_embed(texts))
+    real_embed = embeddings.embed_texts
+    monkeypatch.setattr(embeddings, "embed_texts", lambda texts: embedded.append(texts) or real_embed(texts))
     return embedded
 
 

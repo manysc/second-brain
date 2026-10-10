@@ -7,8 +7,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.application.dtos import NewItem
-from app.domain.entities.knowledge_item import ItemEdit
 from app.domain.exceptions import ItemNotDeletable, ItemNotFound, TopicNotFound
 from app.presentation.api.schemas import ItemCreate, ItemUpdate, NoteCreate
 from app.presentation.mcp.config import Config
@@ -174,16 +172,7 @@ def create_item(
     with _write_lock:
         Snapshot.load().topic_or_404(topic_id)
         try:
-            created = use_cases().create_item(
-                topic_id,
-                NewItem(
-                    type=payload.type,
-                    description=payload.description,
-                    owner=payload.owner,
-                    due_date=payload.due_date,
-                    rationale=payload.rationale,
-                ),
-            )
+            created = use_cases().create_item(topic_id, payload.to_new_item())
         except TopicNotFound:
             raise not_found("Topic", topic_id) from None
         fresh = Snapshot.load()
@@ -222,17 +211,7 @@ def edit_item(
                     )
 
         try:
-            after = use_cases().update_item(
-                item_id,
-                ItemEdit(
-                    fields=frozenset(update.model_fields_set),
-                    type=update.type,
-                    description=update.description,
-                    owner=update.owner,
-                    due_date=update.due_date,
-                    rationale=update.rationale,
-                ),
-            )
+            after = use_cases().update_item(item_id, update.to_item_edit())
         except ItemNotFound:
             raise not_found("Item", item_id) from None
         applied = [

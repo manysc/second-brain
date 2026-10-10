@@ -12,9 +12,11 @@ from datetime import date
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from app import data, db, topic_priority
-from app.models import SemanticContribution
-from app.topic_priority import ItemFact, TopicPriorityFacts, TopicPriorityScorer
+from tests.support import brain
+from app.infrastructure.persistence import database as db
+from app.domain.services import topic_priority
+from app.domain.value_objects.priority import SemanticContribution
+from app.domain.services.topic_priority import ItemFact, TopicPriorityFacts, TopicPriorityScorer
 
 REF_DATE = date(2026, 9, 16)
 
@@ -99,7 +101,7 @@ def test_ambiguous_due_date_grants_no_urgency():
     urgency_signal = next(s for s in result.signals if s.type == "urgency_due_date")
     ambiguous_signal = next(s for s in result.signals if s.type == "urgency_ambiguous_due_date_ignored")
     assert urgency_signal.weighted_score == 0
-    assert ambiguous_signal.source_knowledge_item_ids == ["item-1"]
+    assert list(ambiguous_signal.source_knowledge_item_ids) == ["item-1"]
     assert result.calculated_priority != "CRITICAL"
 
 
@@ -190,11 +192,11 @@ def db_ready():
 
 
 def test_recalculate_creates_history_and_preserves_override(db_ready):
-    from app.db_models import KnowledgeItemRow, MeetingRow, TopicRow
+    from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, TopicRow
 
     meeting_id = f"priority-meeting-{uuid.uuid4().hex[:8]}"
     item_id = f"{meeting_id}:A-1"
-    topic = data.create_topic(f"priority-topic-{uuid.uuid4().hex[:8]}")
+    topic = brain.create_topic(f"priority-topic-{uuid.uuid4().hex[:8]}")
 
     try:
         with db.get_session() as session:
@@ -225,7 +227,7 @@ def test_recalculate_creates_history_and_preserves_override(db_ready):
             )
             session.commit()
 
-        baseline = data.recalculate_priority_for_topic(topic.id)
+        baseline = brain.recalculate_topic_priority(topic.id)
         assert baseline is not None and baseline.priority is not None
         assert baseline.priority.calculated_priority != "CRITICAL"
 
@@ -235,28 +237,28 @@ def test_recalculate_creates_history_and_preserves_override(db_ready):
             row.due_date = "2020-01-01"  # overdue
             session.commit()
 
-        escalated = data.recalculate_priority_for_topic(topic.id)
+        escalated = brain.recalculate_topic_priority(topic.id)
         assert escalated is not None and escalated.priority is not None
         assert escalated.priority.calculated_priority == "CRITICAL"
         assert escalated.priority.hard_escalations
 
-        history = data.get_priority_history(topic.id)
+        history = brain.get_priority_history(topic.id)
         assert len(history) == 1
         assert history[0].new_priority == "CRITICAL"
 
-        overridden = data.set_priority_override(topic.id, "MINOR", "manual review")
+        overridden = brain.set_topic_priority_override(topic.id, "MINOR", "manual review")
         assert overridden is not None and overridden.priority is not None
         assert overridden.priority.effective_priority == "MINOR"
         assert overridden.priority.calculated_priority == "CRITICAL"
 
         # recalculation must never silently remove a human override
-        data.recalculate_priority_for_topic(topic.id)
-        still_overridden = data.get_topic_by_id(topic.id)
+        brain.recalculate_topic_priority(topic.id)
+        still_overridden = brain.get_topic(topic.id)
         assert still_overridden is not None and still_overridden.priority is not None
         assert still_overridden.priority.manual_override is not None
         assert still_overridden.priority.effective_priority == "MINOR"
     finally:
-        # deleted directly at the row level (not via data.delete_topic/assign_item_topic) so
+        # deleted directly at the row level (not via brain.delete_topic/assign_item_topic) so
         # cleanup can't itself leak data if one step fails - each step is independent and
         # best-effort. Deleting the meeting cascades its items regardless of topic_id, and
         # deleting the topic cascades its priority history (topic_priority_history has
