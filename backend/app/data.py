@@ -58,55 +58,38 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 
-UNCATEGORIZED_TOPIC = "Uncategorized"
-
-# synthetic meeting that owns items added by hand rather than extracted from a meeting
-MANUAL_MEETING_ID = "manual"
-
-# cosine similarity between an item and a topic's centroid at/above which the item is filed under that
-# existing topic with no human in the loop (ingestion, review accept without a topic). Suggestions a
-# human confirms use the looser hybrid ranking in app/topic_suggestions.py instead.
-ITEM_TOPIC_MATCH_SIMILARITY = 0.6
-# looser bar for listing a topic as related to another
-PROPOSAL_HINT_SIMILARITY = 0.4
-
-# cosine distance (embeddings are normalized, so 0=identical..~2=opposite) below which an
-# accepted review candidate is treated as a duplicate of an existing item rather than promoted
-DUPLICATE_MATCH_THRESHOLD = 0.2
-
-# ranks used to detect an "escalation" (priority increased) in priority history
-_PRIORITY_RANK = {"MINOR": 0, "MAJOR": 1, "CRITICAL": 2}
-
-# search() ranks HIGH-confidence items first, ties broken by semantic distance
-_CONFIDENCE_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
-
-
-class TopicNameConflict(Exception):
-    """Raised when creating/renaming a topic to a name that's already taken."""
-
-
-class ItemNotDeletable(Exception):
-    """Raised when deleting an item that was extracted from a meeting rather than added manually."""
-
-    def __init__(self, item_id: str) -> None:
-        super().__init__("Only manually added items can be deleted")
-        self.item_id = item_id
-
-
-class ItemNotEditable(ValueError):
-    """Raised when an edit touches a field that is fixed for meeting-extracted items."""
-
-
-class ReviewCandidateAlreadyDecided(Exception):
-    """Raised when accepting/rejecting a review candidate that isn't PENDING anymore."""
-
-
-class TopicHasItems(Exception):
-    """Raised when deleting a topic that still has knowledge items assigned to it."""
-
-    def __init__(self, item_count: int) -> None:
-        super().__init__(item_count)
-        self.item_count = item_count
+# Business constants, rules and exceptions now live in app.domain; the names below are kept so existing
+# callers (REST routes, MCP server, tests) keep working until they move to the application layer.
+from app.domain.exceptions import (  # noqa: E402,F401
+    ImageTooLarge,
+    ItemNotDeletable,
+    ItemNotEditable,
+    ReviewCandidateAlreadyDecided,
+    TooManyTags,
+    TopicHasItems,
+    TopicNameConflict,
+    UnsupportedImageType,
+)
+from app.domain.policies import (  # noqa: E402,F401
+    DUPLICATE_MATCH_THRESHOLD,
+    ITEM_TOPIC_MATCH_SIMILARITY,
+    MANUAL_MEETING_ID,
+    PROPOSAL_HINT_SIMILARITY,
+    UNCATEGORIZED_TOPIC,
+)
+from app.domain.services import similarity  # noqa: E402
+from app.domain.services.similarity import cosine_similarity as similarity_of  # noqa: E402
+from app.domain.services.similarity import closest_topic as _closest_topic  # noqa: E402,F401
+from app.domain.services.topic_ranking import confident_topic_id as _confident_topic_id  # noqa: E402
+from app.domain.value_objects.confidence import CONFIDENCE_RANK as _CONFIDENCE_RANK  # noqa: E402
+from app.domain.value_objects.image_upload import (  # noqa: E402,F401
+    MAX_IMAGE_BYTES,
+    display_filename as _display_filename,
+    sniff_image_type as _sniff_image_type,
+)
+from app.domain.value_objects.item_type import normalize_item_type as _normalize_item_type  # noqa: E402
+from app.domain.value_objects.priority import PRIORITY_RANK as _PRIORITY_RANK  # noqa: E402
+from app.domain.value_objects.tag import with_tag as _with_tag, without_tag as _without_tag  # noqa: E402
 
 
 def _item_effective_priority(row: KnowledgeItemRow) -> tuple[str | None, ManualPriorityOverride | None]:
@@ -333,14 +316,6 @@ def _load_topic_ranker(session: Session) -> topic_suggestions.TopicRanker:
         return ranker
 
 
-def _confident_topic_id(ranked: list[topic_suggestions.RankedTopic]) -> str | None:
-    """The top-ranked topic when it's at least a MEDIUM-confidence match - used to pre-fill a choice
-    a human still confirms, never to file anything automatically."""
-    if not ranked or topic_suggestions.confidence_band(ranked[0].score) == "LOW":
-        return None
-    return ranked[0].topic_id
-
-
 def with_suggested_topics(candidates: list[ReviewCandidate]) -> list[ReviewCandidate]:
     """Fills `suggested_topic_id` (the best-ranked existing topic, when a confident match) on each
     candidate to pre-select the review page's topic picker. Deliberately looser than the strict
@@ -357,11 +332,6 @@ def with_suggested_topics(candidates: list[ReviewCandidate]) -> list[ReviewCandi
         candidate.model_copy(update={"suggested_topic_id": _confident_topic_id(best)})
         for candidate, best in zip(candidates, ranked)
     ]
-
-
-def _normalize_item_type(value: str) -> ItemType:
-    normalized = value.upper()
-    return normalized if normalized in ("IDEA", "DECISION", "ACTION", "QUESTION") else "IDEA"
 
 
 def _find_similar_item(session: Session, embedding: list[float]) -> KnowledgeItemRow | None:
@@ -735,37 +705,6 @@ def delete_topic_note(topic_id: str, note_id: str) -> Topic | None:
     return get_topic_by_id(topic_id)
 
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
-
-
-class UnsupportedImageType(Exception):
-    pass
-
-
-class ImageTooLarge(Exception):
-    pass
-
-
-def _sniff_image_type(body: bytes) -> tuple[str, str] | None:
-    """(content type, file extension) from the leading magic bytes; the client-declared type is never trusted."""
-    if body.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png", "png"
-    if body.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg", "jpg"
-    if body.startswith((b"GIF87a", b"GIF89a")):
-        return "image/gif", "gif"
-    if body[:4] == b"RIFF" and body[8:12] == b"WEBP":
-        return "image/webp", "webp"
-    return None
-
-
-def _display_filename(filename: str | None) -> str:
-    # shown in the UI only; the S3 key never contains it
-    name = (filename or "").replace("\\", "/").rsplit("/", 1)[-1]
-    name = "".join(ch for ch in name if ch.isprintable()).strip()
-    return name[:200] or "image"
-
-
 def _delete_image_objects(keys: list[str]) -> None:
     """Best-effort: a failed delete leaves an unreferenced object, which is preferable to failing the request."""
     for key in keys:
@@ -831,26 +770,6 @@ def get_topic_image(topic_id: str, image_id: str) -> tuple[bytes, str] | None:
             return None
         key, content_type = image.key, image.content_type
     return s3_store.get_object_bytes(key), content_type
-
-
-class TooManyTags(Exception):
-    pass
-
-
-def _with_tag(current: list[str] | None, tag: str) -> list[str]:
-    """`current` plus the normalised tag; a tag already present is a no-op."""
-    tag = normalize_tag(tag)
-    tags = list(current or [])
-    if tag in tags:
-        return tags
-    if len(tags) >= MAX_TAGS:
-        raise TooManyTags(MAX_TAGS)
-    return [*tags, tag]
-
-
-def _without_tag(current: list[str] | None, tag: str) -> list[str]:
-    tag = normalize_tag(tag)
-    return [t for t in (current or []) if t != tag]
 
 
 # Tag lists are reassigned (never appended to) below: SQLAlchemy doesn't track in-place mutation of ARRAY columns.
@@ -1152,12 +1071,7 @@ def merge_topics(source_topic_id: str, target_topic_id: str) -> Topic:
 
 def _topic_centroids(rows: list[TopicRow]) -> dict[str, np.ndarray]:
     """Mean embedding per topic, skipping topics with no embedded items."""
-    centroids: dict[str, np.ndarray] = {}
-    for row in rows:
-        item_vectors = [np.array(item.embedding) for item in row.items if item.embedding is not None]
-        if item_vectors:
-            centroids[row.id] = np.mean(item_vectors, axis=0)
-    return centroids
+    return similarity.topic_centroids({row.id: [item.embedding for item in row.items] for row in rows})
 
 
 def suggested_topic_merges(
@@ -1183,7 +1097,7 @@ def suggested_topic_merges(
     for i in range(len(ids)):
         for j in range(i + 1, len(ids)):
             a, b = vectors[ids[i]], vectors[ids[j]]
-            similarity = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+            similarity = similarity_of(a, b)
             if similarity >= min_similarity:
                 suggestions.append(
                     TopicMergeSuggestion(
@@ -1215,7 +1129,7 @@ def related_topics(
             other = vectors.get(other_id)
             if other is None:
                 continue
-            similarity = float(np.dot(target, other) / (np.linalg.norm(target) * np.linalg.norm(other)))
+            similarity = similarity_of(target, other)
             if similarity >= min_similarity:
                 related.append(
                     RelatedTopic(
@@ -1303,21 +1217,6 @@ def topic_proposals() -> list[TopicProposal]:
             )
     proposals.sort(key=lambda proposal: (-len(proposal.items), proposal.name))
     return proposals
-
-
-def _closest_topic(
-    vector: np.ndarray, centroids: dict[str, np.ndarray], min_similarity: float
-) -> tuple[str | None, float]:
-    """Topic id whose centroid is most cosine-similar to `vector`, if at least `min_similarity`."""
-    best_id: str | None = None
-    best_similarity = -1.0
-    for topic_id, centroid in centroids.items():
-        similarity = float(np.dot(vector, centroid) / (np.linalg.norm(vector) * np.linalg.norm(centroid)))
-        if similarity > best_similarity:
-            best_id, best_similarity = topic_id, similarity
-    if best_id is None or best_similarity < min_similarity:
-        return None, best_similarity
-    return best_id, best_similarity
 
 
 def accept_topic_proposal(
@@ -1484,7 +1383,7 @@ def build_graph(min_semantic_similarity: float = 0.35) -> GraphData:
         for j in range(i + 1, len(vector_ids)):
             a, b = vector_ids[i], vector_ids[j]
             va, vb = vectors[a], vectors[b]
-            similarity = float(np.dot(va, vb) / (np.linalg.norm(va) * np.linalg.norm(vb)))
+            similarity = similarity_of(va, vb)
             if similarity >= min_semantic_similarity:
                 _add_edge(a, b, "semantic", weight=similarity)
 

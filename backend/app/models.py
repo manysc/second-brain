@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.domain.value_objects.tag import MAX_TAG_LENGTH, MAX_TAGS, normalize_tag  # noqa: F401  (re-exported)
+
 ItemType = Literal["IDEA", "DECISION", "ACTION", "QUESTION"]
 Confidence = Literal["HIGH", "MEDIUM", "LOW"]
 ReviewStatus = Literal["PENDING", "ACCEPTED", "REJECTED"]
@@ -56,13 +58,6 @@ class TopicImage(CamelModel):
     created_at: str = Field(alias="createdAt")
 
 
-MAX_TAG_LENGTH = 40
-MAX_TAGS = 20
-
-
-def normalize_tag(value: str) -> str:
-    """Trims, lowercases and collapses inner whitespace so 'Q3  Launch' and 'q3 launch' are one tag."""
-    return " ".join(value.split()).lower()
 
 
 class TagCreate(CamelModel):
