@@ -1,5 +1,39 @@
 # Implementation status
 
+Entries are a dated log: file and function names in an entry are the ones that existed on its date. The
+2026-10-10 entry moved most of them; [architecture.md](../architecture.md) maps the current layout.
+
+## Clean Architecture refactor (2026-10-10)
+
+The backend and the frontend were reorganized into the layers described in `architecture.md` (Domain,
+Application, Infrastructure, Presentation, one composition root per process). Behavior is unchanged: the
+OpenAPI document and the MCP tool catalog are pinned by snapshot tests and match what they were before.
+
+- Backend: `app/data.py`, `ingest.py`, `models.py`, `db.py`, `db_models.py`, `embeddings.py`, `s3_store.py`,
+  `topic_priority.py` and `topic_suggestions.py` are gone. Rules moved onto entities and domain services
+  (`app/domain`), each operation became a use case (`app/application/use_cases`) working through ports,
+  SQLAlchemy/S3/embeddings became adapters (`app/infrastructure`), and the REST API was split into routers
+  with one exception-to-status mapping (`app/presentation/api`). `app/container.py` wires it together.
+- MCP server: moved from `backend/mcp_server/` to `backend/app/presentation/mcp/` and now calls the same
+  use cases as the REST API. The launcher runs `python -m app.presentation.mcp`; `.mcp.json` is unchanged.
+- Frontend: `src/lib/` and `src/components/` were replaced by `src/Domain`, `src/Application`,
+  `src/Infrastructure` and `src/Presentation`, wired in `src/composition.ts`. `src/app` only routes.
+- Enforcement: `backend/tests/test_architecture.py` (import scan) and ESLint `no-restricted-imports` rules,
+  which `tests/frontend/architecture.test.ts` checks actually fire.
+- Tests: frontend suites were added (Vitest under `tests/frontend`, Playwright under `tests/e2e`), plus
+  contract snapshots (`backend/tests/test_contracts.py`, `tests/frontend/api-contract.test.ts`) and
+  database-free domain and use-case tests on both sides.
+- One deliberate behavior change: `GET /api/graph` builds its edges in a deterministic order. The old code
+  iterated a Python `set`, so the edge list could differ from one backend process to the next.
+- Left as they were, and worth a follow-up:
+  - The optional zero-shot (Hugging Face) priority classifier never changes a score: its results are stored
+    under upper-case labels and read back under lower-case ones, so every score it reports is 0.
+  - Related-id links are not resolved for meetings ingested from `<meeting>--<variant>.json` extracts, which
+    is why `tests/test_graph.py::test_related_ids_produce_related_edge` fails on such data.
+  - Topic priority is not recalculated after a status, note or tag change.
+  - Accepting a topic proposal into a topic that does not exist answers 400 where other routes answer 404.
+  - The graph and the merge suggestions compare every pair of items or topics.
+
 ## Manual ingestion from SeaweedFS (2026-10-09)
 
 New extracts no longer need a backend restart to show up: `/meetings` has an **Ingest from SeaweedFS**

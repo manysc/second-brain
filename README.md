@@ -5,16 +5,16 @@ An evidence-first meeting knowledge application. The first useful release turns 
 ## Run locally
 
 ```bash
+docker compose up -d                                        # Postgres (pgvector) + SeaweedFS
+cd backend && .venv/Scripts/python -m uvicorn app.main:app --reload   # API on :8000 (bin/python on macOS/Linux)
 npm install
-npm run verify:ingestion
-npm run dev
+npm run dev                                                 # UI on :3000
 ```
 
-Open `http://localhost:3000/dashboard`.
+Open `http://localhost:3000/dashboard`. The backend section below covers the one-time Python setup and seeding.
 
 Tests use synthetic fixtures in `backend/tests/fixtures/`, and `scripts/seed_seaweedfs.py` uploads whatever `data/*.json` exists.
 
-PostgreSQL with pgvector is provided for the next persistence slice: `docker compose up -d`. The current slice works without Docker, an API key, or an external AI provider.
 
 ## Backend (meeting data via SeaweedFS)
 
@@ -58,8 +58,9 @@ or a topic removes the S3 objects too.
 ### When extracts are processed
 
 Uploading a file to the bucket does not, by itself, make it show up in the app — it needs to be
-ingested (`backend/app/ingest.py`) into Postgres first. Ingestion now runs automatically every time
-the backend starts (in the FastAPI `lifespan` hook in `backend/app/main.py`, gated by
+ingested (the `IngestExtracts` use case in `backend/app/application/use_cases/ingestion.py`) into
+Postgres first. Ingestion now runs automatically every time the backend starts (in the FastAPI
+`lifespan` hook in `backend/app/presentation/api/app_factory.py`, gated by
 `INGEST_ON_STARTUP`), so restarting the server is enough to pick up new or changed extraction files.
 If SeaweedFS or Postgres is unreachable at startup, the failure is logged and the API still starts,
 serving whatever was already ingested. To re-ingest without restarting the server (or to disable the
@@ -105,7 +106,7 @@ still treated as unrelated meetings, even if their content is similar.
 
 Within one canonical meeting, a new idea/decision/action/question is compared by embedding cosine
 distance against that meeting's existing items before insert; a close match (same
-`DUPLICATE_MATCH_THRESHOLD` used by the review-accept dedup in `app/data.py`) reinforces the
+`DUPLICATE_MATCH_THRESHOLD` used by the review-accept dedup, defined in `app/domain/policies.py`) reinforces the
 existing item's confidence to `HIGH` instead of inserting a duplicate row. This dedup is scoped to
 the one meeting, not global — items that merely *sound* similar across different meetings are left
 alone, same as the paragraph above.
@@ -149,20 +150,20 @@ any individual split-out meeting.
 
 ## Semantic embeddings (sentence-transformers)
 
-Ingestion (`backend/app/ingest.py`) embeds every `KnowledgeItem` description with
+Ingestion (`backend/app/application/use_cases/ingestion.py`) embeds every `KnowledgeItem` description with
 `sentence-transformers` (`all-MiniLM-L6-v2`, 384 dimensions) and stores the vector in the
 `knowledge_items.embedding` pgvector column. This powers two features that plain-text/explicit
 links can't cover on their own:
 
-- **"Similar items"** (`data.semantic_similar_items`, surfaced on `/items/[id]`) — nearest
+- **"Similar items"** (the `FindSimilarItems` use case, surfaced on `/items/[id]`) — nearest
   neighbors by cosine distance, a supplement to (not a replacement for) the evidence-grounded
   `related_ids` links.
-- **Duplicate detection on Accept** (`data._find_similar_item`, used by the `/review` page) — when
+- **Duplicate detection on Accept** (the `DecideReviewCandidate` use case, used by the `/review` page) — when
   a review candidate is accepted, its description is embedded and compared against existing
   items; a close match is merged into instead of creating a duplicate `KnowledgeItem`.
 
 If the model weights can't be downloaded (no network, or a blocked host such as a corporate TLS
-proxy), `backend/app/embeddings.py` catches the failure and falls back to a deterministic offline
+proxy), `backend/app/infrastructure/external_services/embeddings.py` catches the failure and falls back to a deterministic offline
 `HashingVectorizer` so the pgvector pipeline still runs end-to-end. It self-upgrades to the real
 model automatically once the download succeeds - no code change or re-ingestion required.
 
@@ -190,18 +191,23 @@ it under `~/.cache/huggingface`. On a network with a TLS-inspecting proxy (e.g. 
 
 ```mermaid
 flowchart LR
-  JSON[Meeting extraction JSON] --> Validate[Zod validation]
-  Validate --> Normalize[Normalized knowledge items]
-  Normalize --> Evidence[Evidence attached to every item]
-  Normalize --> Topics[Explicit-theme topic discovery]
-  Normalize --> Review[Human review candidates]
-  Evidence --> Views[Dashboard and workspaces]
-  Topics --> Views
-  Review --> Views
-  Views --> FutureAI[Provider-independent AI services]
+  S3[Extraction JSON in SeaweedFS] --> Ingest[IngestExtracts use case]
+  Ingest --> PG[(Postgres + pgvector)]
+  PG --> UC[Application use cases]
+  UC --> REST[REST API]
+  UC --> MCP[MCP server]
+  REST --> UI[Next.js UI]
+  MCP --> Claude[Claude Code and the Ask page]
 ```
 
-The domain boundary is in `src/lib/domain.ts`; defensive loading and normalization are in `src/lib/data.ts`. UI components do not invent conclusions: topic and growth pages state when evidence is insufficient. The eventual persistence layer should map the same concepts to Meeting, Person, KnowledgeItem, Evidence, Topic, TopicMembership, Relationship, Outcome, StatusHistory, ReviewCandidate, Competency, and GrowthSignal tables.
+Both the Python backend (`backend/app/`) and the Next.js frontend (`src/`) follow Clean Architecture: Domain, Application, Infrastructure and Presentation layers, with dependencies pointing inward and one composition root per process. [architecture.md](architecture.md) has the directory map, the rules for each layer and how they are enforced.
+
+- **Backend.** Business rules live on domain entities and services (`app/domain`). Each operation is a use case (`app/application/use_cases`) that works through ports; SQLAlchemy, S3 and the embedding model sit behind those ports in `app/infrastructure`. The REST API and the MCP server (`app/presentation`) call the same use cases, so they cannot drift apart.
+- **Frontend.** `src/app` is only the Next.js routing shell. Pages load data through use cases (`src/Application/UseCases`) obtained from `src/composition.ts`; server actions and route handlers are thin controllers (`src/Presentation/Controllers`); the HTTP client for the backend is an adapter (`src/Infrastructure/ExternalServices/BackendApiClient.ts`). `src/Domain` mirrors the backend's API schemas and holds the rules the UI applies to them.
+
+UI components do not invent conclusions: topic and growth pages state when evidence is insufficient.
+
+(Changelog: the codebase was reorganized into these layers. The REST contract, the MCP tool contract and the UI behave as before. `backend/app/data.py`, `ingest.py`, `models.py` and the other flat modules, `backend/mcp_server/`, `src/lib/` and `src/components/` no longer exist; their code now lives in the layers above. One visible difference: `GET /api/graph` returns its edges in a stable order, where it used to vary between backend restarts.)
 
 ## Routes
 
@@ -213,7 +219,7 @@ The domain boundary is in `src/lib/domain.ts`; defensive loading and normalizati
 
 ## Topic suggestions
 
-`backend/app/topic_suggestions.py` ranks existing topics for items that don't have one yet. It mixes four signals:
+`backend/app/domain/services/topic_ranking.py` ranks existing topics for items that don't have one yet. It mixes four signals:
 
 - cosine similarity to each topic's mean item embedding
 - a vote among the item's 10 nearest categorized items
@@ -248,7 +254,7 @@ Filing without a human in the loop is unchanged: ingestion auto-filing, and acce
 
 ## Ask page
 
-`/ask` (`src/app/api/ask/route.ts`) calls `@anthropic-ai/claude-agent-sdk`'s `query()` with no auth option set, so it authenticates with whatever credential the Agent SDK finds in the environment. With no `ANTHROPIC_API_KEY` set, it falls back to the logged-in Claude Code / VS Code extension session (`~/.claude/.credentials.json`) — that is, your Claude Pro OAuth session, not a raw Anthropic API key. That means data-sharing settings for these requests are governed by that account's own "Help improve Claude" setting (claude.ai/settings/data-privacy-controls), not by anything in this app.
+`/ask` (`src/Infrastructure/ExternalServices/ClaudeAgentSdkAsk.ts`, reached through `src/app/api/ask/route.ts`) calls `@anthropic-ai/claude-agent-sdk`'s `query()` with no auth option set, so it authenticates with whatever credential the Agent SDK finds in the environment. With no `ANTHROPIC_API_KEY` set, it falls back to the logged-in Claude Code / VS Code extension session (`~/.claude/.credentials.json`) — that is, your Claude Pro OAuth session, not a raw Anthropic API key. That means data-sharing settings for these requests are governed by that account's own "Help improve Claude" setting (claude.ai/settings/data-privacy-controls), not by anything in this app.
 
 ## Other implemented features
 
@@ -261,7 +267,7 @@ A few smaller features exist in the code and API but aren't covered elsewhere in
 - **Item-level manual priority override** — `PATCH /api/items/{id}/priority-override` mirrors the topic priority override (see Automatic Topic Priority Classification) but scoped to a single item.
 - **Topic merge suggestions** — `GET /api/topics/suggested-merges` and the `SuggestedTopicMerges` component surface candidate topics worth merging, ahead of the `POST /api/topics/{id}/merge` call.
 - **Topic proposals from register-derived meetings** — `GET /api/review/topic-proposals`, `POST /api/review/topic-proposals/accept`, and `POST /api/review/topic-proposals/reject` (`TopicProposalCard`) let a reviewer turn a suggested new topic name into a real topic, or reject it — distinct from the regular per-candidate review flow in `/review`. Picking a topic in a card's "or file under existing topic" dropdown files the proposal right away, with no Accept click. Accept is still used to keep the pre-selected topic or to create a new one. Like candidate decisions, the card disappears at once (`TopicProposalList`) and comes back with an error banner if saving fails.
-- **Instant Accept/Reject on `/review`** — `ReviewCandidateList` hides a candidate as soon as Accept or Reject is clicked and calls `decideReviewCandidateAction`, which returns instead of redirecting; on failure the candidate reappears with an error banner. (Changelog: Accept used to wait for a full redirect and page re-render. `GET /api/review` now queries pending candidates directly (`data.pending_review_candidates`) instead of loading every meeting and item, and the zero-shot priority classifier pipeline, when enabled, is built once per process instead of on every accept. The topic ranker behind `/api/review`, `/api/review/topic-proposals` and the Uncategorized topic suggestions (`data._load_topic_ranker`) is now cached and reused until a fingerprint of topic names/tags and item descriptions/embeddings changes. Writes made by the MCP server from another process count too. That removes a ~1.4s rebuild from each of those requests.)
+- **Instant Accept/Reject on `/review`** — `ReviewCandidateList` hides a candidate as soon as Accept or Reject is clicked and calls `decideReviewCandidateAction`, which returns instead of redirecting; on failure the candidate reappears with an error banner. (Changelog: Accept used to wait for a full redirect and page re-render. `GET /api/review` now queries pending candidates directly (the `ListPendingReview` use case) instead of loading every meeting and item, and the zero-shot priority classifier pipeline, when enabled, is built once per process instead of on every accept. The topic ranker behind `/api/review`, `/api/review/topic-proposals` and the Uncategorized topic suggestions (`TopicRankerCache` in `app/application/services/topic_ranker_cache.py`) is now cached and reused until a fingerprint of topic names/tags and item descriptions/embeddings changes. Writes made by the MCP server from another process count too. That removes a ~1.4s rebuild from each of those requests.)
 - **Related topics** — `GET /api/topics/{id}/related` and the `RelatedTopics` component show topics connected to the one being viewed.
 - **Follow-up digest** — `GET /api/follow-up` (configurable `limit` and `dueSoonDays`) returns a digest of items needing follow-up; this is the data source behind `/briefing`.
 - **Free-text search** — `GET /api/search?q=` does keyword search across items and topics, separate from the embedding-based "similar items" feature described above.
@@ -273,6 +279,14 @@ Ideas, decisions, actions, and questions become a common `KnowledgeItem`. Eviden
 
 ## Testing and limitations
 
-`npm run verify:ingestion` checks required counts, key relationships, evidence preservation, A-009's normalized date, A-010's unresolved date, and review-candidate separation. `npm run build` validates the application.
+| Command | Covers |
+| --- | --- |
+| `cd backend && .venv/Scripts/python -m pytest -q` | Domain and use-case unit tests (no database), integration tests against Postgres (skipped when it is unreachable), the REST and MCP contract snapshots, and the layer-dependency check. |
+| `npm run mcp:test` | The MCP server suite only. |
+| `npm test` | Vitest: frontend domain rules, use cases against in-memory fakes, the backend API client, controllers, components, the layer-boundary lint rules, and a check that every request the frontend makes exists in the backend's OpenAPI snapshot. |
+| `npm run test:e2e` | Playwright against the real stack (Docker, FastAPI, Next.js): every page renders, plus the review, topic, note, tag, image, priority, item and ingest flows. Uses the installed Microsoft Edge; set `PW_CHANNEL` to use another browser. |
+| `npm run lint`, `npx tsc --noEmit`, `npm run build` | Lint (including the layer boundaries), types and the production build. |
 
-This is a working local vertical slice, not yet the complete PostgreSQL-backed multi-meeting system. Persistence, upload APIs, editable review decisions, embeddings, relationship suggestions, outcomes, and provider-backed synthesis are the next implementation step. No business impact or professional pattern is fabricated when absent from stored evidence.
+(Changelog: added the frontend test suites (`npm test`, `npm run test:e2e`) and the contract and architecture checks. The old `npm run verify:ingestion` script is gone.)
+
+Limitations: this is a local, single-user application with no authentication. No business impact or professional pattern is fabricated when absent from stored evidence.
