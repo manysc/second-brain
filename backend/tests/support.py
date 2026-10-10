@@ -15,7 +15,11 @@ from app.container import Container, get_container
 from app.domain.entities.knowledge_item import ItemEdit
 from app.domain.value_objects.extraction import ExtractedMeeting
 from app.infrastructure.persistence import database as db
-from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, TopicRow
+from app.infrastructure.persistence.orm_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    TopicRow,
+)
 from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 

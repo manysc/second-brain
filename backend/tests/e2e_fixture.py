@@ -15,10 +15,15 @@ from datetime import date
 from dotenv import load_dotenv
 from sqlalchemy import delete, select
 
-from tests.support import brain
+from app.application.dtos import NewItem
 from app.infrastructure.persistence import database as db
-from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
-from app.models import ItemCreate
+from app.infrastructure.persistence.orm_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    ReviewCandidateRow,
+    TopicRow,
+)
+from tests.support import brain
 
 
 def _names(run: str) -> dict[str, str]:
@@ -55,8 +60,7 @@ def seed(run: str) -> dict[str, object]:
         session.commit()
     topic = brain.create_topic(names["topic"])
     target = brain.create_topic(names["target"])
-    item = brain.create_item(topic.id, ItemCreate(type="ACTION", description=f"{_ITEM} ({run})"))
-    assert item is not None
+    item = brain.create_item(topic.id, NewItem(type="ACTION", description=f"{_ITEM} ({run})"))
     return {
         "run": run,
         "meetingId": names["meeting"],

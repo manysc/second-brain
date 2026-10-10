@@ -1,4 +1,4 @@
-"""Unit tests for the entities: each business rule they guard, with the old app.data behavior as the spec."""
+"""Unit tests for the entities: each business rule they guard. Pure, no database."""
 from __future__ import annotations
 
 import pytest

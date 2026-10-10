@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from app.domain.exceptions import ItemNotFound, TooManyTags
+from app.domain.value_objects.tag import MAX_TAGS
 from tests.domain import factories as make
 from tests.support import brain
-from app.domain.value_objects.tag import MAX_TAGS
 from tests.support import cleanup as _cleanup
 from tests.support import make_topic_with_item as _make_topic_with_item
 

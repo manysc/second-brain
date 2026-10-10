@@ -11,7 +11,9 @@ from app.domain.services.topic_ranking import (
     confidence_band,
 )
 from app.domain.services.topic_ranking import TopicRanker as DomainTopicRanker
-from app.infrastructure.external_services.tfidf_description_index import build_tfidf_description_index
+from app.infrastructure.external_services.tfidf_description_index import (
+    build_tfidf_description_index,
+)
 
 
 def TopicRanker(profiles):  # noqa: N802  (reads like the class it wraps)

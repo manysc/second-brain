@@ -6,9 +6,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.domain.exceptions import TooManyTags, TopicNotFound
-from tests.support import brain
 from app.domain.value_objects.tag import MAX_TAG_LENGTH, MAX_TAGS
 from app.presentation.api.schemas import TagCreate
+from tests.support import brain
 from tests.support import cleanup as _cleanup
 from tests.support import make_topic_with_item as _make_topic_with_item
 

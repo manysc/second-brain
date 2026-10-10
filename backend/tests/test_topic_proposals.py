@@ -14,7 +14,11 @@ from app.domain.exceptions import TopicNotFound
 from app.domain.value_objects.evidence import Evidence
 from app.domain.value_objects.extraction import ExtractedItem, ExtractedMeeting
 from app.infrastructure.persistence import database as db
-from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, TopicRow
+from app.infrastructure.persistence.orm_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    TopicRow,
+)
 from tests.support import brain, merge_extract
 
 
@@ -315,7 +319,9 @@ def test_accept_review_candidate_with_blank_topic_uses_uncategorized_and_bad_top
 
 def test_topic_ranker_is_reused_until_its_inputs_change(db_ready):
     from app.application.services.topic_ranker_cache import TopicRankerCache
-    from app.infrastructure.external_services.tfidf_description_index import build_tfidf_description_index
+    from app.infrastructure.external_services.tfidf_description_index import (
+        build_tfidf_description_index,
+    )
     from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
     builds = []

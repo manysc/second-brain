@@ -9,11 +9,11 @@ from moto import mock_aws
 
 from app.domain.exceptions import ImageTooLarge, TopicNotFound, UnsupportedImageType
 from app.domain.value_objects.image_upload import MAX_IMAGE_BYTES
-from tests.support import brain
-from app.infrastructure.persistence import database as db
 from app.infrastructure.external_services import s3_storage as s3_store
+from app.infrastructure.persistence import database as db
 from app.infrastructure.persistence.orm_models import TopicImageRow
 from app.main import app
+from tests.support import brain
 from tests.support import cleanup as _cleanup
 from tests.support import make_topic_with_item as _make_topic_with_item
 

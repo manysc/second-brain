@@ -5,9 +5,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from tests.support import brain
-from app.infrastructure.persistence import database as db
 from app.infrastructure.external_services import embeddings
+from app.infrastructure.persistence import database as db
+from tests.support import brain
 
 
 @pytest.fixture(scope="module")
@@ -17,7 +17,11 @@ def synthetic():
         db.init_db()
     except OperationalError:
         pytest.skip("Postgres is not reachable at DATABASE_URL; skipping MCP integration tests")
-    from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, TopicRow
+    from app.infrastructure.persistence.orm_models import (
+        KnowledgeItemRow,
+        MeetingRow,
+        TopicRow,
+    )
 
     suffix = uuid.uuid4().hex[:8]
     meeting_id = f"mcp-test-meeting-{suffix}"

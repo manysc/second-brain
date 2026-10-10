@@ -9,9 +9,13 @@ import uuid
 import pytest
 
 from app.domain.exceptions import TopicNotFound
-from tests.support import brain
 from app.infrastructure.persistence import database as db
-from app.infrastructure.persistence.orm_models import EMBEDDING_DIM, KnowledgeItemRow, MeetingRow
+from app.infrastructure.persistence.orm_models import (
+    EMBEDDING_DIM,
+    KnowledgeItemRow,
+    MeetingRow,
+)
+from tests.support import brain
 
 
 def _unique_name(prefix: str) -> str:

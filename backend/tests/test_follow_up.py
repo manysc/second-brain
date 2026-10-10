@@ -1,6 +1,6 @@
 """Integration tests for brain.get_follow_up() against a real Postgres+pgvector instance.
 
-Mirrors test_topics.py's / test_topic_priority.py's db_ready pattern (auto-skips if Postgres
+Uses the shared db_ready fixture (auto-skips if Postgres
 isn't reachable) and seeds synthetic meetings/topics/items directly at the row level so
 inclusion/exclusion/ordering/cross-topic behavior is deterministic regardless of whatever real
 data is already in the database.
@@ -12,9 +12,13 @@ import uuid
 import pytest
 from sqlalchemy import delete
 
-from tests.support import brain
 from app.infrastructure.persistence import database as db
-from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, TopicRow
+from app.infrastructure.persistence.orm_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    TopicRow,
+)
+from tests.support import brain
 
 
 def _item_row(

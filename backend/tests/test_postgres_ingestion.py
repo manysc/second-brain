@@ -16,7 +16,12 @@ from app.application.dtos import IngestSummary, KnowledgeItemDTO
 from app.infrastructure.external_services import embeddings
 from app.infrastructure.external_services import s3_storage as s3_store
 from app.infrastructure.persistence import database as db
-from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
+from app.infrastructure.persistence.orm_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    ReviewCandidateRow,
+    TopicRow,
+)
 from tests.support import brain, ingest_everything
 
 DATA_DIR = Path(__file__).resolve().parent / "fixtures"

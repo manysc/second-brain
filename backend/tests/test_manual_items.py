@@ -9,10 +9,19 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from app.domain.exceptions import ItemNotDeletable, ItemNotEditable, ItemNotFound, TopicNotFound
+from app.domain.exceptions import (
+    ItemNotDeletable,
+    ItemNotEditable,
+    ItemNotFound,
+    TopicNotFound,
+)
 from app.domain.policies import MANUAL_MEETING_ID
 from app.infrastructure.persistence import database as db
-from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, TopicRow
+from app.infrastructure.persistence.orm_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    TopicRow,
+)
 from app.presentation.api.schemas import ItemCreate, ItemUpdate
 from tests.support import brain
 from tests.support import cleanup as _cleanup_extracted

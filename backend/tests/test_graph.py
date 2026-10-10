@@ -7,9 +7,9 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from tests.support import brain
 from app.infrastructure.persistence import database as db
 from app.infrastructure.persistence.orm_models import KnowledgeItemRow
+from tests.support import brain
 
 
 def test_every_item_produces_a_node(db_ready):

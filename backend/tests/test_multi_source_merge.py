@@ -12,11 +12,15 @@ import pytest
 from moto import mock_aws
 from sqlalchemy import select
 
-from tests.support import brain
-from app.infrastructure.persistence import database as db
-from tests.support import ingest_everything
 from app.infrastructure.external_services import s3_storage as s3_store
-from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, ReviewCandidateRow, TopicRow
+from app.infrastructure.persistence import database as db
+from app.infrastructure.persistence.orm_models import (
+    KnowledgeItemRow,
+    MeetingRow,
+    ReviewCandidateRow,
+    TopicRow,
+)
+from tests.support import brain, ingest_everything
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 BUCKET = "test-multi-source-bucket"

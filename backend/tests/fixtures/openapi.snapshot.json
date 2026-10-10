@@ -1256,7 +1256,7 @@
         "type": "object"
       },
       "TopicCandidate": {
-        "description": "A lightweight reference to an existing topic ranked for an item (see app/topic_suggestions.py).",
+        "description": "A lightweight reference to an existing topic ranked for an item (see app/domain/services/topic_ranking.py).",
         "properties": {
           "centroidSimilarity": {
             "title": "Centroidsimilarity",

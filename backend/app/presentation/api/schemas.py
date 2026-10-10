@@ -353,7 +353,7 @@ class TopicProposalReject(CamelModel):
 
 
 class TopicCandidate(CamelModel):
-    """A lightweight reference to an existing topic ranked for an item (see app/topic_suggestions.py)."""
+    """A lightweight reference to an existing topic ranked for an item (see app/domain/services/topic_ranking.py)."""
     topic_id: str = Field(alias="topicId")
     topic_name: str = Field(alias="topicName")
     item_count: int = Field(alias="itemCount")

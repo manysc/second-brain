@@ -44,7 +44,7 @@ class TopicRow(Base):
         back_populates="topic", cascade="all, delete-orphan", lazy="selectin", order_by="TopicImageRow.created_at"
     )
 
-    # -- automatic priority classification (calculated_* set only by topic_priority.py) --
+    # -- automatic priority classification (calculated_* set only by priority recalculation) --
     calculated_priority: Mapped[str | None] = mapped_column(String, nullable=True)
     calculated_priority_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     priority_confidence: Mapped[str | None] = mapped_column(String, nullable=True)

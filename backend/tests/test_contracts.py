@@ -2,7 +2,13 @@
 After an intended change, regenerate with `python -m tests.contract_snapshots` and review the diff."""
 from __future__ import annotations
 
-from tests.contract_snapshots import MCP_SNAPSHOT, OPENAPI_SNAPSHOT, dump, mcp_catalog, openapi_document
+from tests.contract_snapshots import (
+    MCP_SNAPSHOT,
+    OPENAPI_SNAPSHOT,
+    dump,
+    mcp_catalog,
+    openapi_document,
+)
 
 
 def test_openapi_document_matches_snapshot():

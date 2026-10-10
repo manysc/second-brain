@@ -7,9 +7,9 @@ from mcp.client import Client
 from app.application.exceptions import StorageUnavailable
 from app.application.use_cases.health import CheckStorageHealth
 from app.presentation.mcp import context, service
-from tests.mcp_tests import factories as f
 from app.presentation.mcp.config import load_config
 from app.presentation.mcp.server import create_server
+from tests.mcp_tests import factories as f
 
 READ_TOOLS = {
     "brain_health", "brain_search_items", "brain_get_item", "brain_get_topic_context", "brain_get_relationship_graph",

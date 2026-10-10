@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.infrastructure.persistence import database as db
 from app.domain.exceptions import ItemNotFound, TopicNotFound
-from tests.support import brain
+from app.infrastructure.persistence import database as db
 from app.infrastructure.persistence.orm_models import NoteRow
 from app.presentation.api.schemas import NoteCreate
+from tests.support import brain
 from tests.support import cleanup as _cleanup
 from tests.support import make_topic_with_item as _make_topic_with_item
 

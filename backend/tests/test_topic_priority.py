@@ -1,22 +1,23 @@
-"""Tests for automatic Topic priority classification (backend/app/topic_priority.py).
+"""Tests for automatic Topic priority classification (app/domain/services/topic_priority).
 
 Most tests exercise TopicPriorityScorer.score() directly - it's a pure function (no DB), which
 is what makes it calibratable/unit-testable per the design doc. The final test class integrates
-against a real Postgres instance (mirrors backend/tests/test_topics.py's db_ready pattern).
+against a real Postgres instance (skipped when it is not reachable).
 """
 from __future__ import annotations
 
 import uuid
 from datetime import date
 
-import pytest
-from sqlalchemy.exc import OperationalError
-
-from tests.support import brain
-from app.infrastructure.persistence import database as db
 from app.domain.services import topic_priority
+from app.domain.services.topic_priority import (
+    ItemFact,
+    TopicPriorityFacts,
+    TopicPriorityScorer,
+)
 from app.domain.value_objects.priority import SemanticContribution
-from app.domain.services.topic_priority import ItemFact, TopicPriorityFacts, TopicPriorityScorer
+from app.infrastructure.persistence import database as db
+from tests.support import brain
 
 REF_DATE = date(2026, 9, 16)
 
@@ -181,18 +182,12 @@ def test_hysteresis_prevents_thrashing_near_the_demote_threshold():
     assert scorer._classify(thresholds["critical"], "MINOR") == "CRITICAL"
 
 
-@pytest.fixture(scope="module")
-def db_ready():
-    """Mirrors test_topics.py's db_ready pattern (auto-skips if Postgres isn't reachable)."""
-    try:
-        db.init_db()
-    except OperationalError:
-        pytest.skip("Postgres is not reachable at DATABASE_URL; skipping DB integration tests")
-    yield
-
-
 def test_recalculate_creates_history_and_preserves_override(db_ready):
-    from app.infrastructure.persistence.orm_models import KnowledgeItemRow, MeetingRow, TopicRow
+    from app.infrastructure.persistence.orm_models import (
+        KnowledgeItemRow,
+        MeetingRow,
+        TopicRow,
+    )
 
     meeting_id = f"priority-meeting-{uuid.uuid4().hex[:8]}"
     item_id = f"{meeting_id}:A-1"
