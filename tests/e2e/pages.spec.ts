@@ -34,6 +34,12 @@ test.describe("every page renders against the real backend", () => {
   }
 });
 
+test("a topic that does not exist is a 404 page, not a crash", async ({ page }) => {
+  const response = await page.goto("/topics/00000000-0000-4000-8000-000000000000");
+  expect(response?.status()).toBe(404);
+  await expect(page.getByText(/Unhandled Runtime Error|Application error/)).toHaveCount(0);
+});
+
 test("the ask page offers a composer without calling the agent", async ({ page }) => {
   await page.goto("/ask");
   await expect(page.getByRole("heading", { name: "What do you need to know?" })).toBeVisible();
