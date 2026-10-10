@@ -41,3 +41,39 @@ def closest_topic(
     if best_id is None or best_similarity < min_similarity:
         return None, best_similarity
     return best_id, best_similarity
+
+
+def most_similar(
+    target: np.ndarray | None,
+    candidates: Mapping[str, np.ndarray | None],
+    min_similarity: float,
+    limit: int,
+) -> list[tuple[str, float]]:
+    """(id, similarity) of the candidates closest to `target`, most similar first. Candidates without a
+    centroid are skipped; a missing target matches nothing."""
+    if target is None:
+        return []
+    scored: list[tuple[str, float]] = []
+    for candidate_id, vector in candidates.items():
+        if vector is None:
+            continue
+        score = cosine_similarity(target, vector)
+        if score >= min_similarity:
+            scored.append((candidate_id, score))
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    return scored[:limit]
+
+
+def similar_pairs(
+    centroids: Mapping[str, np.ndarray], min_similarity: float, limit: int
+) -> list[tuple[str, str, float]]:
+    """Every pair of centroids at least `min_similarity` alike, most similar first."""
+    ids = list(centroids.keys())
+    pairs: list[tuple[str, str, float]] = []
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            score = cosine_similarity(centroids[ids[i]], centroids[ids[j]])
+            if score >= min_similarity:
+                pairs.append((ids[i], ids[j], score))
+    pairs.sort(key=lambda pair: pair[2], reverse=True)
+    return pairs[:limit]
