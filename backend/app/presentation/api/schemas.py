@@ -311,8 +311,14 @@ class FollowUpTopic(CamelModel):
 
 
 class FollowUpResponse(CamelModel):
+    """`maxAgeDays` is the age cut-off that was applied (null when off), `hiddenStaleCount` the items it left out,
+    and `totalTopics` the topics with something to raise before `limit` cut the list."""
+
     topics: list[FollowUpTopic]
     generated_at: str = Field(alias="generatedAt")
+    hidden_stale_count: int = Field(default=0, alias="hiddenStaleCount")
+    max_age_days: int | None = Field(default=None, alias="maxAgeDays")
+    total_topics: int = Field(default=0, alias="totalTopics")
 
 
 class TopicMerge(CamelModel):

@@ -1,9 +1,10 @@
 """Picks what is worth raising at the next meeting: open questions, due-soon/overdue/undated actions, and
 decisions something unresolved still depends on - grouped under the highest-priority topics, plus items pulled
-in from other topics through related_ids."""
+in from other topics through related_ids. Items nothing has happened to for a while can be left out, and the
+whole selection can be narrowed to some people, meetings or topics."""
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -30,6 +31,73 @@ class TopicFollowUp:
     escalated_recently: bool
     escalation_drivers: tuple[str, ...]
     related_from_other_topics: tuple[RelatedFollowUp, ...]
+
+
+@dataclass(frozen=True)
+class FollowUpSelection:
+    """`hidden_stale_count` is how many items the age cut-off left out, and `total_topics` how many topics had
+    something to raise before `limit` cut the list - both inside the scope that was asked for."""
+
+    topics: tuple[TopicFollowUp, ...]
+    hidden_stale_count: int
+    total_topics: int
+
+
+def _name_key(name: str) -> str:
+    return name.strip().casefold()
+
+
+@dataclass(frozen=True)
+class FollowUpScope:
+    """Narrows a selection to some people, meetings or topics. An empty set does not restrict; within a set any
+    match counts, and every non-empty set has to match. Build it with `of`, which normalizes what a person typed."""
+
+    stakeholders: frozenset[str] = frozenset()
+    meeting_ids: frozenset[str] = frozenset()
+    topic_ids: frozenset[str] = frozenset()
+
+    @classmethod
+    def of(
+        cls, stakeholders: Iterable[str] = (), meeting_ids: Iterable[str] = (), topic_ids: Iterable[str] = ()
+    ) -> FollowUpScope:
+        """Names match whole, ignoring case and surrounding spaces; blank values are dropped."""
+        return cls(
+            stakeholders=frozenset(_name_key(name) for name in stakeholders if name.strip()),
+            meeting_ids=frozenset(value.strip() for value in meeting_ids if value.strip()),
+            topic_ids=frozenset(value.strip() for value in topic_ids if value.strip()),
+        )
+
+    def covers_item(self, item: KnowledgeItem) -> bool:
+        if self.meeting_ids and item.meeting_id not in self.meeting_ids:
+            return False
+        if self.stakeholders:
+            names = {_name_key(name) for name in (item.owner, *item.stakeholders) if name}
+            if not names & self.stakeholders:
+                return False
+        return True
+
+    def covers_topic(self, topic_id: str) -> bool:
+        return not self.topic_ids or topic_id in self.topic_ids
+
+
+def last_activity(item: KnowledgeItem, meeting_date: date | None) -> date | None:
+    """Items carry no date of their own, so this is the latest of: the meeting it came from, its newest note, a
+    manual priority override and, for an action, its due date. Items added by hand all share one synthetic
+    meeting, whose date says nothing about any of them, so it is ignored for those."""
+    stamps = [None if item.is_manual else meeting_date]
+    stamps.extend(parse_iso_date(note.created_at) for note in item.notes)
+    if item.manual_override is not None:
+        stamps.append(parse_iso_date(item.manual_override.overridden_at))
+    if item.type == "ACTION":
+        stamps.append(parse_iso_date(item.due_date))
+    known = [stamp for stamp in stamps if stamp is not None]
+    return max(known) if known else None
+
+
+def is_stale(item: KnowledgeItem, meeting_date: date | None, reference_date: date, max_age_days: int) -> bool:
+    """An item with no known date is never stale: there is nothing to judge its age by."""
+    latest = last_activity(item, meeting_date)
+    return latest is not None and latest < reference_date - timedelta(days=max_age_days)
 
 
 def resolve_related_item_id(raw_id: str, item_by_id: Mapping[str, KnowledgeItem], suffix_to_id: Mapping[str, str]) -> str | None:
@@ -61,8 +129,17 @@ def select_follow_ups(
     reference_date: date,
     limit: int,
     due_soon_days: int,
-) -> list[TopicFollowUp]:
-    """`recent_escalations` must be newest first. Topics are ranked by effective priority, then score."""
+    meeting_dates: Mapping[str, date] | None = None,
+    max_age_days: int | None = None,
+    scope: FollowUpScope | None = None,
+) -> FollowUpSelection:
+    """`recent_escalations` must be newest first. Topics are ranked by effective priority, then score.
+
+    With `max_age_days`, items that are stale against `meeting_dates` (meeting id -> date) are left out and
+    counted. `scope` keeps only the items it covers and ranks only the topics it covers; items listed as related
+    from other topics may still come from outside those topics."""
+    meeting_dates = meeting_dates or {}
+    scope = scope or FollowUpScope()
     item_by_id: dict[str, KnowledgeItem] = {}
     topic_id_by_item_id: dict[str, str] = {}
     topic_name_by_id: dict[str, str] = {}
@@ -83,18 +160,40 @@ def select_follow_ups(
             if target_id is not None:
                 referenced_by.setdefault(target_id, []).append(item.id)
 
-    follow_up_ids: set[str] = set()
-    for item in item_by_id.values():
-        if item.type == "QUESTION":
-            if not item.is_resolved:
-                follow_up_ids.add(item.id)
-        elif item.type == "ACTION":
-            if not item.is_resolved and is_action_due(item, reference_date, due_soon_days):
-                follow_up_ids.add(item.id)
-        elif item.type == "DECISION":
-            dependents = referenced_by.get(item.id, [])
-            if any(not item_by_id[dep_id].is_resolved for dep_id in dependents if dep_id in item_by_id):
-                follow_up_ids.add(item.id)
+    def qualifying(ignored: Collection[str]) -> set[str]:
+        """Ignored items are not raised themselves and do not keep a decision in. A decision's own age is never
+        the question: something live depending on it is what makes it worth raising."""
+        ids: set[str] = set()
+        for item in item_by_id.values():
+            if item.type == "QUESTION":
+                if not item.is_resolved and item.id not in ignored:
+                    ids.add(item.id)
+            elif item.type == "ACTION":
+                if not item.is_resolved and item.id not in ignored and is_action_due(item, reference_date, due_soon_days):
+                    ids.add(item.id)
+            elif item.type == "DECISION":
+                dependents = referenced_by.get(item.id, [])
+                if any(dep_id not in ignored and not item_by_id[dep_id].is_resolved for dep_id in dependents):
+                    ids.add(item.id)
+        return ids
+
+    stale_ids: set[str] = set()
+    if max_age_days is not None:
+        stale_ids = {
+            item.id
+            for item in item_by_id.values()
+            if is_stale(item, meeting_dates.get(item.meeting_id), reference_date, max_age_days)
+        }
+    in_scope_ids = {item.id for item in item_by_id.values() if scope.covers_item(item)}
+    fresh_ids = qualifying(stale_ids)
+    follow_up_ids = fresh_ids & in_scope_ids
+    hidden_stale_count = 0
+    if stale_ids:
+        hidden_stale_count = sum(
+            1
+            for item_id in (qualifying(()) - fresh_ids) & in_scope_ids
+            if scope.covers_topic(topic_id_by_item_id[item_id])
+        )
 
     escalations_by_topic: dict[str, list[TopicPriorityHistoryEntry]] = {}
     for entry in recent_escalations:
@@ -102,6 +201,8 @@ def select_follow_ups(
 
     ranked: list[tuple[Topic, list[KnowledgeItem]]] = []
     for topic in topics:
+        if not scope.covers_topic(topic.id):
+            continue
         follow_up_items = sorted(
             (item for item in items_by_topic.get(topic.id, ()) if item.id in follow_up_ids), key=follow_up_sort_key
         )
@@ -159,4 +260,4 @@ def select_follow_ups(
                 related_from_other_topics=tuple(related),
             )
         )
-    return selected
+    return FollowUpSelection(topics=tuple(selected), hidden_stale_count=hidden_stale_count, total_topics=len(ranked))

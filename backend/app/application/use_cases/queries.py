@@ -1,7 +1,9 @@
 """Read-only views over the whole knowledge base: meetings, search, the relationship graph and follow-ups."""
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 
 from app.application.dtos import (
     FollowUpDTO,
@@ -22,9 +24,11 @@ from app.application.use_cases.priority import recent_escalations
 from app.application.use_cases.topics import all_topic_centroids, related_topics
 from app.domain.entities.knowledge_item import KnowledgeItem
 from app.domain.exceptions import MeetingNotFound, NoMeetingsAvailable
-from app.domain.services.follow_up import select_follow_ups
+from app.domain.policies import FOLLOW_UP_MAX_AGE_DAYS
+from app.domain.services.follow_up import FollowUpScope, select_follow_ups
 from app.domain.services.item_graph import build_item_edges
 from app.domain.services.search_ranking import rank_search_hits
+from app.domain.value_objects.dates import parse_iso_date
 
 ESCALATION_WINDOW_DAYS = 14
 
@@ -146,18 +150,46 @@ class BuildGraph:
 @dataclass(frozen=True)
 class GetFollowUp:
     """Ranks topics by priority/score and surfaces only the items worth raising at the next meeting
-    (see domain.services.follow_up)."""
+    (see domain.services.follow_up).
+
+    Items with no activity in `max_age_days` are left out and counted; None or 0 turns that off. `stakeholders`
+    (names), `meeting_ids` and `topic_ids` narrow the digest: any value within one of them, all of them together.
+    A value that matches nothing gives an empty digest, not an error."""
 
     uow: UnitOfWorkFactory
     clock: Clock
 
-    def __call__(self, limit: int = 5, due_soon_days: int = 7) -> FollowUpDTO:
+    def __call__(
+        self,
+        limit: int = 5,
+        due_soon_days: int = 7,
+        max_age_days: int | None = FOLLOW_UP_MAX_AGE_DAYS,
+        stakeholders: Sequence[str] = (),
+        meeting_ids: Sequence[str] = (),
+        topic_ids: Sequence[str] = (),
+    ) -> FollowUpDTO:
+        cutoff = max_age_days or None
         with self.uow() as uow:
             topics, items_by_topic = assembler.load_topics(uow)
             escalations = recent_escalations(uow, self.clock, ESCALATION_WINDOW_DAYS)
+            meeting_dates: dict[str, date] = {}
+            if cutoff is not None:
+                used_meeting_ids = sorted({item.meeting_id for items in items_by_topic.values() for item in items})
+                for meeting_id, raw_date in uow.meetings.dates_by_id(used_meeting_ids).items():
+                    meeting_date = parse_iso_date(raw_date)
+                    if meeting_date is not None:
+                        meeting_dates[meeting_id] = meeting_date
         now = self.clock.now()
-        selected = select_follow_ups(
-            topics, items_by_topic, escalations, reference_date=now.date(), limit=limit, due_soon_days=due_soon_days
+        selection = select_follow_ups(
+            topics,
+            items_by_topic,
+            escalations,
+            reference_date=now.date(),
+            limit=limit,
+            due_soon_days=due_soon_days,
+            meeting_dates=meeting_dates,
+            max_age_days=cutoff,
+            scope=FollowUpScope.of(stakeholders, meeting_ids, topic_ids),
         )
         topics_by_id = {topic.id: topic for topic in topics}
         return FollowUpDTO(
@@ -177,7 +209,10 @@ class GetFollowUp:
                         for related in follow_up.related_from_other_topics
                     ),
                 )
-                for follow_up in selected
+                for follow_up in selection.topics
             ),
             generated_at=now.isoformat(),
+            hidden_stale_count=selection.hidden_stale_count,
+            max_age_days=cutoff,
+            total_topics=selection.total_topics,
         )

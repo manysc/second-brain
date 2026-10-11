@@ -217,8 +217,14 @@ class FollowUpTopicDTO:
 
 @dataclass(frozen=True)
 class FollowUpDTO:
+    """`max_age_days` is the age cut-off that was applied (None when it was off), `hidden_stale_count` the items it
+    left out and `total_topics` the topics with something to raise before the limit cut the list."""
+
     topics: tuple[FollowUpTopicDTO, ...]
     generated_at: str
+    hidden_stale_count: int = 0
+    max_age_days: int | None = None
+    total_topics: int = 0
 
 
 @dataclass(frozen=True)

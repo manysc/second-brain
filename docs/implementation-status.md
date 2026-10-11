@@ -3,6 +3,22 @@
 Entries are a dated log: file and function names in an entry are the ones that existed on its date. The
 2026-10-10 entry moved most of them; [architecture.md](../architecture.md) maps the current layout.
 
+## Briefing: age cut-off and filters (2026-10-10)
+
+- Domain (`domain/services/follow_up.py`): `last_activity` / `is_stale` (meeting date, newest note, manual override,
+  due date for actions), `FollowUpScope` (stakeholders, meetings, topics) and `select_follow_ups` now returning a
+  `FollowUpSelection` with `hidden_stale_count` and `total_topics`. `FOLLOW_UP_MAX_AGE_DAYS = 30` in `domain/policies.py`.
+- Application: `GetFollowUp(limit, due_soon_days, max_age_days, stakeholders, meeting_ids, topic_ids)`; the cut-off is
+  on by default and `None` or `0` turns it off. `FollowUpDTO` carries the two counts and the cut-off applied.
+- REST: `GET /api/follow-up` takes `maxAgeDays` and the repeatable `stakeholder`, `meetingId`, `topicId` (the first
+  multi-value query parameters in the API). OpenAPI snapshot regenerated; the MCP catalog is unchanged.
+- Frontend: `getFollowUp` takes a `FollowUpQuery` object; `/briefing` reads its filters from the URL
+  (`src/Presentation/briefingFilters.ts`) and renders `BriefingFilterBar` and `StaleItemsNote`.
+- Not done: an MCP tool over the same use case, so `/ask` still answers "what should I follow up on" without it.
+- Tests: domain and use-case tests without a database, REST tests over the fakes, Postgres tests in
+  `tests/test_follow_up.py`, Vitest for the domain rule, use case, API client, URL helpers and both components, and
+  Playwright `tests/e2e/briefing.spec.ts` (the page is an async server component).
+
 ## MCP write access: create topic and bulk move (2026-10-10)
 
 - New MCP write tools `brain_create_topic` and `brain_move_items`, thin adapters over the existing `CreateTopic` and

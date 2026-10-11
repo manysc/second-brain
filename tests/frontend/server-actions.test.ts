@@ -170,7 +170,7 @@ describe("item filing actions", () => {
 });
 
 describe("review and ingestion actions", () => {
-  const reviewPaths = ["/review", "/dashboard", "/items", "/topics", "/meetings"];
+  const reviewPaths = ["/review", "/dashboard", "/items", "/topics", "/meetings", "/meetings/[id]|page"];
 
   it("decideReviewCandidateAction sends the topic only when accepting", async () => {
     const backend = fakeBackend({ "PATCH /api/review/c1": ok });

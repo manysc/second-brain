@@ -86,5 +86,11 @@ export const CASES: Case[] = [
   { name: "getRecentPriorityEscalations", run: () => api.getRecentPriorityEscalations(), method: "GET", path: "/api/priority-history/recent" },
   { name: "getRecentPriorityEscalations days", run: () => api.getRecentPriorityEscalations(7), method: "GET", path: "/api/priority-history/recent?days=7" },
   { name: "getFollowUp", run: () => api.getFollowUp(), method: "GET", path: "/api/follow-up" },
-  { name: "getFollowUp params", run: () => api.getFollowUp(3, 10), method: "GET", path: "/api/follow-up?limit=3&dueSoonDays=10" },
+  { name: "getFollowUp params", run: () => api.getFollowUp({ limit: 3, dueSoonDays: 10 }), method: "GET", path: "/api/follow-up?limit=3&dueSoonDays=10" },
+  {
+    name: "getFollowUp filters",
+    run: () => api.getFollowUp({ maxAgeDays: 0, stakeholders: ["Ana P", "Ben"], meetingIds: ["m1"], topicIds: ["t1", "t2"] }),
+    method: "GET",
+    path: "/api/follow-up?maxAgeDays=0&stakeholder=Ana+P&stakeholder=Ben&meetingId=m1&topicId=t1&topicId=t2",
+  },
 ];

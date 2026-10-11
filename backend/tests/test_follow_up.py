@@ -8,6 +8,7 @@ data is already in the database.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import delete
@@ -29,6 +30,7 @@ def _item_row(
     status: str,
     due_date: str | None = None,
     related_ids: list[str] | None = None,
+    owner: str = "Ada",
 ) -> KnowledgeItemRow:
     return KnowledgeItemRow(
         id=item_id,
@@ -39,8 +41,8 @@ def _item_row(
         theme=None,
         status=status,
         confidence="MEDIUM",
-        owner="Ada",
-        stakeholders=["Ada"],
+        owner=owner,
+        stakeholders=[owner],
         due_date=due_date,
         due_date_source_text=None,
         rationale=None,
@@ -56,8 +58,11 @@ def _item_row(
 
 @pytest.fixture
 def follow_up_scenario(db_ready):
-    """Seeds two qualifying topics (A, B, cross-linked) and one non-qualifying topic (C)."""
+    """Seeds two qualifying topics (A, B, cross-linked) and one non-qualifying topic (C). The meeting is dated
+    today so the age cut-off leaves its items alone; one more question hangs off a meeting from 2020."""
     meeting_id = f"follow-up-meeting-{uuid.uuid4().hex[:8]}"
+    old_meeting_id = f"{meeting_id}-old"
+    owner = f"Grace {uuid.uuid4().hex[:8]}"
     topic_ids: list[str] = []
     try:
         # setup is inside the try so topics created before a later setup step fails still get cleaned up
@@ -74,20 +79,25 @@ def follow_up_scenario(db_ready):
         a_resolved = f"{meeting_id}:A-RESOLVED"
         a_dependent = f"{meeting_id}:A-DEPENDENT"
         q_resolved = f"{meeting_id}:Q-RESOLVED"
+        q_old = f"{old_meeting_id}:Q-OLD"
 
         with db.get_session() as session:
-            session.add(MeetingRow(id=meeting_id, title="Follow-up test meeting", date="2026-09-01", source_url="https://example.com"))
+            session.add(MeetingRow(id=meeting_id, title="Follow-up test meeting", date=datetime.now(timezone.utc).date().isoformat(), source_url="https://example.com"))
+            session.add(MeetingRow(id=old_meeting_id, title="Follow-up test meeting, long ago", date="2020-01-01", source_url="https://example.com"))
             session.add(_item_row(q1, meeting_id, topic_a.id, "QUESTION", "Open"))
             session.add(_item_row(d1, meeting_id, topic_a.id, "DECISION", "Open"))
             session.add(_item_row(a_overdue, meeting_id, topic_a.id, "ACTION", "Open", due_date="2020-01-01"))
             session.add(_item_row(a_resolved, meeting_id, topic_a.id, "ACTION", "Resolved"))
             # references D-1 (topic A) from topic B, and is itself unresolved (no due date)
-            session.add(_item_row(a_dependent, meeting_id, topic_b.id, "ACTION", "Open", related_ids=["D-1"]))
+            session.add(_item_row(a_dependent, meeting_id, topic_b.id, "ACTION", "Open", related_ids=["D-1"], owner=owner))
             session.add(_item_row(q_resolved, meeting_id, topic_c.id, "QUESTION", "Answered"))
+            session.add(_item_row(q_old, old_meeting_id, topic_a.id, "QUESTION", "Open"))
             session.commit()
 
         yield {
             "meeting_id": meeting_id,
+            "old_meeting_id": old_meeting_id,
+            "owner": owner,
             "topic_a": topic_a.id,
             "topic_b": topic_b.id,
             "topic_c": topic_c.id,
@@ -97,13 +107,14 @@ def follow_up_scenario(db_ready):
             "a_resolved": a_resolved,
             "a_dependent": a_dependent,
             "q_resolved": q_resolved,
+            "q_old": q_old,
         }
     finally:
         # one transaction, errors not swallowed: items are deleted first (they reference both the meeting and
         # the topics), topic priority history cascades with the topic
         with db.get_session() as session:
-            session.execute(delete(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id == meeting_id))
-            session.execute(delete(MeetingRow).where(MeetingRow.id == meeting_id))
+            session.execute(delete(KnowledgeItemRow).where(KnowledgeItemRow.meeting_id.in_([meeting_id, old_meeting_id])))
+            session.execute(delete(MeetingRow).where(MeetingRow.id.in_([meeting_id, old_meeting_id])))
             session.execute(delete(TopicRow).where(TopicRow.id.in_(topic_ids)))
             session.commit()
 
@@ -158,3 +169,34 @@ def test_cross_topic_related_item_surfaced(follow_up_scenario):
 def test_limit_truncates_ranked_topics(follow_up_scenario):
     response = brain.get_follow_up(limit=1)
     assert len(response.topics) == 1
+
+
+def _follow_up_ids(response) -> set[str]:
+    return {item.id for topic in response.topics for item in topic.follow_up_items}
+
+
+def test_items_with_no_recent_activity_are_hidden_by_default_and_counted(follow_up_scenario):
+    # narrowed to the two seeded meetings so the count is exact whatever else the database holds
+    meetings = [follow_up_scenario["meeting_id"], follow_up_scenario["old_meeting_id"]]
+    default = brain.get_follow_up(limit=1000, meeting_ids=meetings)
+    assert follow_up_scenario["q_old"] not in _follow_up_ids(default)
+    # overdue since 2020, but its meeting was today, so it is not stale
+    assert {follow_up_scenario["q1"], follow_up_scenario["a_overdue"]} <= _follow_up_ids(default)
+    assert (default.hidden_stale_count, default.max_age_days) == (1, 30)
+
+    everything = brain.get_follow_up(limit=1000, max_age_days=None, meeting_ids=meetings)
+    assert follow_up_scenario["q_old"] in _follow_up_ids(everything)
+    assert (everything.hidden_stale_count, everything.max_age_days) == (0, None)
+
+
+def test_scope_narrows_to_a_person_a_meeting_and_a_topic(follow_up_scenario):
+    by_person = brain.get_follow_up(limit=1000, stakeholders=[follow_up_scenario["owner"].upper()])
+    assert [topic.topic.id for topic in by_person.topics] == [follow_up_scenario["topic_b"]]
+    assert _follow_up_ids(by_person) == {follow_up_scenario["a_dependent"]}
+
+    by_meeting = brain.get_follow_up(limit=1000, max_age_days=None, meeting_ids=[follow_up_scenario["old_meeting_id"]])
+    assert _follow_up_ids(by_meeting) == {follow_up_scenario["q_old"]}
+
+    by_topic = brain.get_follow_up(limit=1, topic_ids=[follow_up_scenario["topic_a"], follow_up_scenario["topic_b"]])
+    assert by_topic.total_topics == 2 and len(by_topic.topics) == 1
+    assert by_topic.topics[0].topic.id in {follow_up_scenario["topic_a"], follow_up_scenario["topic_b"]}

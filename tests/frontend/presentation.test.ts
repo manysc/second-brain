@@ -23,6 +23,13 @@ import { addItemTagAction, createTopicAndMoveItemsAction, moveSuggestedItemsActi
 import { field, redirectWithError, topicPath } from "@/Presentation/Controllers/support";
 import { createTopicAction } from "@/Presentation/Controllers/topicActions";
 import { getTopicImage } from "@/Presentation/Controllers/topicImageController";
+import {
+  DEFAULT_BRIEFING_FILTERS,
+  briefingHref,
+  isNarrowed,
+  parseBriefingFilters,
+  toFollowUpQuery,
+} from "@/Presentation/briefingFilters";
 import { formatNoteDate, percent, plural, timeAgo } from "@/Presentation/format";
 import { orNotFound } from "@/Presentation/pageSupport";
 import { form, redirectOf } from "./support/backend";
@@ -92,6 +99,55 @@ describe("wording helpers", () => {
     vi.setSystemTime(new Date("2026-10-09T12:00:00Z"));
     expect(timeAgo(Date.now() - 59 * 60_000)).toBe("59m ago");
     expect(timeAgo(Date.now() - 23 * 3_600_000)).toBe("23h ago");
+  });
+});
+
+describe("briefing filters in the URL", () => {
+  it("reads nothing as the defaults: stale items hidden, five topics, no filters", () => {
+    expect(parseBriefingFilters({})).toEqual(DEFAULT_BRIEFING_FILTERS);
+    expect(DEFAULT_BRIEFING_FILTERS).toEqual({ showStale: false, limit: 5, stakeholders: [], meetingIds: [], topicIds: [] });
+    expect(briefingHref(DEFAULT_BRIEFING_FILTERS)).toBe("/briefing");
+    expect(isNarrowed(DEFAULT_BRIEFING_FILTERS)).toBe(false);
+  });
+
+  it("reads a key given once or repeated, trimmed and without blanks or repeats", () => {
+    const filters = parseBriefingFilters({
+      stakeholder: ["Ana", " Ben ", "Ana", ""],
+      meeting: "m1",
+      topic: ["t1", "t2"],
+      stale: "show",
+      limit: "10",
+    });
+    expect(filters).toEqual({ showStale: true, limit: 10, stakeholders: ["Ana", "Ben"], meetingIds: ["m1"], topicIds: ["t1", "t2"] });
+    expect(isNarrowed(filters)).toBe(true);
+    expect(isNarrowed({ ...DEFAULT_BRIEFING_FILTERS, showStale: true, limit: 50 })).toBe(false);
+  });
+
+  it("falls back to the defaults for values it does not offer", () => {
+    expect(parseBriefingFilters({ limit: "7" }).limit).toBe(5);
+    expect(parseBriefingFilters({ limit: "lots" }).limit).toBe(5);
+    expect(parseBriefingFilters({ limit: ["50", "10"] }).limit).toBe(50);
+    expect(parseBriefingFilters({ stale: "hide" }).showStale).toBe(false);
+  });
+
+  it("writes a URL that reads back as the same filters", () => {
+    const filters = { showStale: true, limit: 20, stakeholders: ["Ana P", "Ben & Co"], meetingIds: ["m1"], topicIds: ["t1", "t2"] };
+    const href = briefingHref(filters);
+    expect(href).toBe("/briefing?stakeholder=Ana+P&stakeholder=Ben+%26+Co&meeting=m1&topic=t1&topic=t2&stale=show&limit=20");
+    const query = new URL(href, "http://test").searchParams;
+    const params = Object.fromEntries([...new Set(query.keys())].map((key) => [key, query.getAll(key)]));
+    expect(parseBriefingFilters(params)).toEqual(filters);
+  });
+
+  it("asks the backend to drop the cut-off only when stale items are wanted", () => {
+    expect(toFollowUpQuery(DEFAULT_BRIEFING_FILTERS)).toEqual({ limit: 5, stakeholders: [], meetingIds: [], topicIds: [] });
+    expect(toFollowUpQuery({ ...DEFAULT_BRIEFING_FILTERS, showStale: true, limit: 10, topicIds: ["t1"] })).toEqual({
+      limit: 10,
+      maxAgeDays: 0,
+      stakeholders: [],
+      meetingIds: [],
+      topicIds: ["t1"],
+    });
   });
 });
 

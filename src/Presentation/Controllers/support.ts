@@ -41,4 +41,5 @@ export function revalidateAfterItemChange(topicId: string): void {
 
 export function revalidateReviewPages(): void {
   revalidate("/review", "/dashboard", "/items", "/topics", "/meetings");
+  revalidatePath("/meetings/[id]", "page");
 }

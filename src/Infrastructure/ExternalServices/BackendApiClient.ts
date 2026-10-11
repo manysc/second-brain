@@ -2,6 +2,7 @@ import type { IngestResult, ItemPatch, NewItem, TopicImageContent } from "@/Appl
 import { NotFoundError } from "@/Application/Errors";
 import type { KnowledgeRepository } from "@/Application/Interfaces/KnowledgeRepository";
 import type {
+  FollowUpQuery,
   FollowUpResponse,
   GraphData,
   ItemTopicSuggestion,
@@ -293,10 +294,15 @@ export class BackendApiClient implements KnowledgeRepository {
     return this.read(minSimilarity !== undefined ? `/api/graph?minSimilarity=${minSimilarity}` : "/api/graph");
   }
 
-  getFollowUp(limit?: number, dueSoonDays?: number): Promise<FollowUpResponse> {
+  getFollowUp(filters: FollowUpQuery = {}): Promise<FollowUpResponse> {
     const params = new URLSearchParams();
-    if (limit !== undefined) params.set("limit", String(limit));
-    if (dueSoonDays !== undefined) params.set("dueSoonDays", String(dueSoonDays));
+    if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+    if (filters.dueSoonDays !== undefined) params.set("dueSoonDays", String(filters.dueSoonDays));
+    if (filters.maxAgeDays !== undefined) params.set("maxAgeDays", String(filters.maxAgeDays));
+    // the list filters are repeated keys: ?stakeholder=Ana&stakeholder=Ben
+    for (const name of filters.stakeholders ?? []) params.append("stakeholder", name);
+    for (const meetingId of filters.meetingIds ?? []) params.append("meetingId", meetingId);
+    for (const topicId of filters.topicIds ?? []) params.append("topicId", topicId);
     const query = params.toString();
     return this.read(query ? `/api/follow-up?${query}` : "/api/follow-up");
   }

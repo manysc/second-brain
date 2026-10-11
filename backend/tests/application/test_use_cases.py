@@ -487,6 +487,29 @@ def test_graph_and_follow_up_views(world):
     }
 
 
+def test_follow_up_hides_stale_items_by_default_and_narrows_to_people_meetings_and_topics(world):
+    seed_topics(world)
+    world.db.seed(make.item("m1:Q-9", type="QUESTION", topic_id="hiring", owner="Dee", stakeholders=("Dee",)))
+
+    def listed(**options):
+        follow_up = world.app.get_follow_up(**options)
+        return {topic.topic.id: [item.id for item in topic.follow_up_items] for topic in follow_up.topics}
+
+    assert listed(stakeholders=["dee"]) == {"hiring": ["m1:Q-9"]}
+    assert listed(topic_ids=["billing"]) == {"billing": ["m1:A-1"]}
+    assert listed(meeting_ids=["m1"], stakeholders=["Ana"]) == {"billing": ["m1:A-1"], "hiring": ["m1:A-2"]}
+    assert listed(meeting_ids=["no-such-meeting"]) == {}
+    limited = world.app.get_follow_up(limit=1)
+    assert (len(limited.topics), limited.total_topics, limited.hidden_stale_count, limited.max_age_days) == (1, 2, 0, 30)
+
+    world.clock.advance(days=40)  # the only meeting is now 54 days old
+    stale = world.app.get_follow_up()
+    assert (stale.topics, stale.total_topics, stale.hidden_stale_count) == ((), 0, 3)
+    assert world.app.get_follow_up(topic_ids=["billing"]).hidden_stale_count == 1
+    everything = world.app.get_follow_up(max_age_days=0)
+    assert (len(everything.topics), everything.hidden_stale_count, everything.max_age_days) == (2, 0, None)
+
+
 # -- ingestion -------------------------------------------------------------------------------------------
 
 

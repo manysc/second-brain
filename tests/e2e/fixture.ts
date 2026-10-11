@@ -13,6 +13,13 @@ export type Seed = {
   itemDescription: string;
   acceptDescription: string;
   rejectDescription: string;
+  meetingCandidateDescription: string;
+  /** owner of the two questions below */
+  owner: string;
+  /** an open question from today's meeting, in the seeded topic */
+  freshQuestion: string;
+  /** an open question from a meeting in 2020, in the seeded topic */
+  staleQuestion: string;
 };
 
 const BACKEND_DIR = path.join(process.cwd(), "backend");

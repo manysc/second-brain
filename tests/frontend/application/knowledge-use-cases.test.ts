@@ -149,6 +149,46 @@ describe("item use cases", () => {
   });
 });
 
+describe("follow-up use case", () => {
+  it("cleans the filter lists before they reach the repository", async () => {
+    const knowledge = fakeKnowledge();
+    const useCases = knowledgeUseCases(knowledge);
+    await useCases.getFollowUp();
+    expect(knowledge.getFollowUp).toHaveBeenLastCalledWith({ stakeholders: [], meetingIds: [], topicIds: [] });
+
+    await useCases.getFollowUp({
+      limit: 10,
+      maxAgeDays: 0,
+      stakeholders: [" Ana ", "Ana", "", "Ben"],
+      meetingIds: ["m1", "  "],
+      topicIds: ["t1", "t1 "],
+    });
+    expect(knowledge.getFollowUp).toHaveBeenLastCalledWith({
+      limit: 10,
+      maxAgeDays: 0,
+      stakeholders: ["Ana", "Ben"],
+      meetingIds: ["m1"],
+      topicIds: ["t1"],
+    });
+  });
+
+  it("never lets the limit cut topics a person picked", async () => {
+    const knowledge = fakeKnowledge();
+    const useCases = knowledgeUseCases(knowledge);
+    const limitFor = async (query: Parameters<typeof useCases.getFollowUp>[0]) => {
+      await useCases.getFollowUp(query);
+      return knowledge.getFollowUp.mock.lastCall?.[0].limit;
+    };
+    const seven = ["a", "b", "c", "d", "e", "f", "g"];
+    expect(await limitFor({ topicIds: seven })).toBe(7); // over the default of 5
+    expect(await limitFor({ limit: 5, topicIds: seven })).toBe(7);
+    expect(await limitFor({ limit: 20, topicIds: seven })).toBe(20);
+    expect(await limitFor({ topicIds: ["a"] })).toBe(5);
+    expect(await limitFor({ limit: 10 })).toBe(10);
+    expect(await limitFor({})).toBeUndefined(); // no topics picked: the backend's default applies
+  });
+});
+
 describe("review use cases", () => {
   it("passes a topic only when accepting a candidate", async () => {
     const knowledge = fakeKnowledge();

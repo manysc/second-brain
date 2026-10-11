@@ -215,6 +215,27 @@ def test_search_graph_and_follow_up_respond(client, world):
     assert client.get("/api/follow-up", params={"limit": 0}).status_code == 422
 
 
+def test_follow_up_takes_an_age_cut_off_and_repeatable_filters(client, world):
+    follow_up = client.get("/api/follow-up").json()
+    assert (follow_up["hiddenStaleCount"], follow_up["maxAgeDays"], follow_up["totalTopics"]) == (0, 30, 2)
+    assert client.get("/api/follow-up", params={"maxAgeDays": -1}).status_code == 422
+
+    world.clock.advance(days=40)  # the seeded meeting is now older than the cut-off
+    hidden = client.get("/api/follow-up").json()
+    assert (hidden["topics"], hidden["hiddenStaleCount"]) == ([], 2)
+
+    def topics(**params):
+        body = client.get("/api/follow-up", params={"maxAgeDays": 0, **params}).json()
+        assert body["maxAgeDays"] is None and body["hiddenStaleCount"] == 0
+        return [topic["topic"]["id"] for topic in body["topics"]]
+
+    assert topics() == ["billing", "hiring"]
+    assert topics(topicId="hiring") == ["hiring"]
+    assert topics(topicId=["hiring", "billing"]) == ["billing", "hiring"]
+    assert topics(stakeholder=["nobody", "ben"]) == ["billing", "hiring"]
+    assert topics(stakeholder="nobody") == [] and topics(meetingId=["m1", "m2"], topicId="billing") == ["billing"]
+
+
 # -- ingestion -------------------------------------------------------------------------------------------
 
 

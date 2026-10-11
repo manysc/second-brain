@@ -1,4 +1,5 @@
 import type {
+  FollowUpQuery,
   FollowUpResponse,
   GraphData,
   ItemTopicSuggestion,
@@ -85,5 +86,5 @@ export interface KnowledgeRepository {
 
   // whole-knowledge-base views
   getGraph(minSimilarity?: number): Promise<GraphData>;
-  getFollowUp(limit?: number, dueSoonDays?: number): Promise<FollowUpResponse>;
+  getFollowUp(query?: FollowUpQuery): Promise<FollowUpResponse>;
 }

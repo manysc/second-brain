@@ -24,6 +24,20 @@ test("reject a review candidate", async ({ page }) => {
   await expect(page.locator("article.review-item", { hasText: seed.rejectDescription })).toHaveCount(0);
 });
 
+test("accept a review candidate from its meeting page", async ({ page }) => {
+  const meetingPath = `/meetings/${encodeURIComponent(seed.meetingId)}`;
+  await gotoHydrated(page, meetingPath);
+  const card = page.locator("article.review-item", { hasText: seed.meetingCandidateDescription });
+  await card.getByRole("button", { name: "Accept" }).click();
+  await expect(card).toHaveCount(0);
+  await page.waitForLoadState("networkidle"); // the card hides optimistically; let the action finish
+
+  await page.reload();
+  const decided = page.locator("article.review-item", { hasText: seed.meetingCandidateDescription });
+  await expect(decided).toContainText("Accepted");
+  await expect(decided.getByRole("button", { name: "Accept" })).toHaveCount(0);
+});
+
 test("ingest from SeaweedFS reports a summary", async ({ page }) => {
   test.setTimeout(240_000);
   await gotoHydrated(page, "/meetings");

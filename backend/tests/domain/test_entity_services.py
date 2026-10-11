@@ -6,22 +6,41 @@ from datetime import date
 import numpy as np
 import pytest
 
+from app.domain.entities.note import Note
 from app.domain.services import similarity
-from app.domain.services.follow_up import select_follow_ups
+from app.domain.services.follow_up import (
+    FollowUpScope,
+    is_stale,
+    last_activity,
+    select_follow_ups,
+)
 from app.domain.services.item_graph import build_item_edges, related_items
 from app.domain.services.search_ranking import rank_search_hits
 from app.domain.services.topic_matching import TopicMatcher, TopicSnapshot
-from app.domain.value_objects.priority import TopicPriorityHistoryEntry
+from app.domain.value_objects.priority import (
+    ManualPriorityOverride,
+    TopicPriorityHistoryEntry,
+)
 from tests.domain import factories as make
 
 REF = date(2026, 6, 15)
 
 
-def _follow_ups(topics, items, escalations=(), limit=5, due_soon_days=7):
+def _select(topics, items, escalations=(), limit=5, due_soon_days=7, **options):
     by_topic: dict[str, list] = {}
     for current in items:
         by_topic.setdefault(current.topic_id, []).append(current)
-    return select_follow_ups(topics, by_topic, list(escalations), reference_date=REF, limit=limit, due_soon_days=due_soon_days)
+    return select_follow_ups(
+        topics, by_topic, list(escalations), reference_date=REF, limit=limit, due_soon_days=due_soon_days, **options
+    )
+
+
+def _follow_ups(topics, items, escalations=(), limit=5, due_soon_days=7):
+    return list(_select(topics, items, escalations, limit, due_soon_days).topics)
+
+
+def _ids(selection):
+    return [current.id for followed in selection.topics for current in followed.follow_up_items]
 
 
 # -- follow-up -------------------------------------------------------------------------------------------
@@ -79,6 +98,109 @@ def test_follow_up_pulls_related_items_from_other_topics_and_reports_escalations
     ]
     assert selected["t1"].escalated_recently and selected["t1"].escalation_drivers == ("two decisions",)
     assert not selected["t2"].escalated_recently
+
+
+# meeting id -> date: "old" is 45 days before REF, "new" 5. The manual meeting's date must never count.
+DATES = {"old": date(2026, 5, 1), "new": date(2026, 6, 10), "manual": date(2026, 1, 1)}
+
+
+def test_follow_up_leaves_out_items_with_no_activity_inside_the_age_window():
+    items = [
+        make.item("new:Q-1", type="QUESTION"),
+        make.item("old:Q-1", type="QUESTION"),  # nothing since the old meeting
+        make.item("old:Q-2", type="QUESTION", notes=(Note(id="n", body="still open", created_at="2026-06-12T09:00:00+00:00"),)),
+        make.item("old:Q-3", type="QUESTION", manual_override=ManualPriorityOverride("MAJOR", None, "2026-06-01T00:00:00+00:00")),
+        make.item("old:A-1", type="ACTION", due_date="2026-06-18"),  # old meeting, but due this week
+        make.item("old:A-2", type="ACTION", due_date="2026-05-10"),  # overdue for longer than the window
+        make.item("old:A-3", type="ACTION"),  # undated, so only the old meeting dates it
+        make.item("manual:A-1", type="ACTION"),  # added by hand: no date of its own
+        make.item("gone:Q-1", type="QUESTION"),  # its meeting has no known date
+    ]
+    selection = _select([make.topic()], items, meeting_dates=DATES, max_age_days=30)
+    assert _ids(selection) == ["gone:Q-1", "new:Q-1", "old:Q-2", "old:Q-3", "manual:A-1", "old:A-1"]
+    assert selection.hidden_stale_count == 3
+
+    without_cut_off = _select([make.topic()], items, meeting_dates=DATES)
+    assert len(_ids(without_cut_off)) == len(items) and without_cut_off.hidden_stale_count == 0
+
+
+def test_an_item_is_stale_only_past_the_window_and_never_without_a_date():
+    question = make.item("m:Q-1", type="QUESTION")
+    assert last_activity(question, date(2026, 5, 16)) == date(2026, 5, 16)
+    assert not is_stale(question, date(2026, 5, 16), REF, 30)  # exactly 30 days old
+    assert is_stale(question, date(2026, 5, 15), REF, 30)
+    assert last_activity(question, None) is None and not is_stale(question, None, REF, 30)
+    # a due date dates an action, not a question
+    assert last_activity(make.item("m:Q-2", type="QUESTION", due_date="2026-06-14"), date(2026, 5, 1)) == date(2026, 5, 1)
+    assert last_activity(make.item("m:A-1", type="ACTION", due_date="2026-06-14"), date(2026, 5, 1)) == date(2026, 6, 14)
+
+
+def test_follow_up_drops_a_decision_whose_only_open_dependent_is_stale():
+    items = [
+        make.item("old:D-1", type="DECISION"),
+        make.item("old:D-2", type="DECISION"),
+        make.item("old:I-1", type="IDEA", related_ids=("old:D-1",)),  # stale, so D-1 has nothing live behind it
+        make.item("new:I-2", type="IDEA", related_ids=("old:D-2",)),  # live, so the old D-2 stays
+    ]
+    selection = _select([make.topic()], items, meeting_dates=DATES, max_age_days=30)
+    assert _ids(selection) == ["old:D-2"] and selection.hidden_stale_count == 1
+
+
+def test_follow_up_scope_narrows_by_person_meeting_and_topic():
+    here, there = make.topic("t1", "Here"), make.topic("t2", "There")
+    items = [
+        make.item("m1:Q-1", type="QUESTION", topic_id="t1", owner="Ana", stakeholders=("Ana",)),
+        make.item("m1:Q-2", type="QUESTION", topic_id="t1", owner="Ben", stakeholders=("Ben", "Cy")),
+        make.item("m2:Q-3", type="QUESTION", topic_id="t2", owner=None, stakeholders=("Ana",)),
+        make.item("m2:Q-4", type="QUESTION", topic_id="t2", owner="Dee", stakeholders=()),
+    ]
+
+    def picked(**scope):
+        return _ids(_select([here, there], items, scope=FollowUpScope.of(**scope)))
+
+    assert picked(stakeholders=[" ANA "]) == ["m1:Q-1", "m2:Q-3"]  # owner or stakeholder, any case
+    assert picked(stakeholders=["ana", "dee"]) == ["m1:Q-1", "m2:Q-3", "m2:Q-4"]  # any of the names
+    assert picked(stakeholders=["An"]) == []  # whole names only
+    assert picked(meeting_ids=["m2"]) == ["m2:Q-3", "m2:Q-4"]
+    assert picked(topic_ids=["t1"]) == ["m1:Q-1", "m1:Q-2"]
+    assert picked(stakeholders=["Ana"], meeting_ids=["m1", "m2"], topic_ids=["t2"]) == ["m2:Q-3"]  # all filters together
+    assert picked(topic_ids=["no-such-topic"]) == [] and picked(meeting_ids=["no-such-meeting"]) == []
+    assert len(picked(stakeholders=["  "], meeting_ids=[""])) == 4  # blank values do not restrict
+
+
+def test_follow_up_topic_scope_still_lists_related_items_from_other_topics():
+    here, there = make.topic("t1", "Here"), make.topic("t2", "There")
+    items = [
+        make.item("m1:Q-1", type="QUESTION", topic_id="t1", related_ids=("Q-9", "Q-8")),
+        make.item("m1:Q-9", type="QUESTION", topic_id="t2"),
+        make.item("m2:Q-8", type="QUESTION", topic_id="t2"),
+    ]
+    one_topic = _select([here, there], items, scope=FollowUpScope.of(topic_ids=["t1"]))
+    assert [followed.topic.id for followed in one_topic.topics] == ["t1"] and one_topic.total_topics == 1
+    assert [related.item.id for related in one_topic.topics[0].related_from_other_topics] == ["m1:Q-9", "m2:Q-8"]
+    # the other filters still apply to them
+    one_meeting = _select([here, there], items, scope=FollowUpScope.of(topic_ids=["t1"], meeting_ids=["m1"]))
+    assert [related.item.id for related in one_meeting.topics[0].related_from_other_topics] == ["m1:Q-9"]
+
+
+def test_follow_up_counts_hidden_items_and_topics_inside_the_scope():
+    topics = [make.topic("t1", "One"), make.topic("t2", "Two"), make.topic("t3", "Three")]
+    items = [
+        make.item("new:Q-1", type="QUESTION", topic_id="t1"),
+        make.item("old:Q-2", type="QUESTION", topic_id="t1"),
+        make.item("new:Q-3", type="QUESTION", topic_id="t2", owner="Dee", stakeholders=("Dee",)),
+        make.item("old:Q-4", type="QUESTION", topic_id="t2", owner="Dee", stakeholders=("Dee",)),
+        make.item("old:Q-5", type="QUESTION", topic_id="t3"),
+    ]
+
+    def counts(limit=5, **scope):
+        selection = _select(topics, items, limit=limit, meeting_dates=DATES, max_age_days=30, scope=FollowUpScope.of(**scope))
+        return len(selection.topics), selection.total_topics, selection.hidden_stale_count
+
+    assert counts(limit=1) == (1, 2, 3)  # t3 has only a stale item; the limit does not change the totals
+    assert counts(topic_ids=["t1"]) == (1, 1, 1)
+    assert counts(stakeholders=["Dee"]) == (1, 1, 1)
+    assert counts(meeting_ids=["old"]) == (0, 0, 3)
 
 
 # -- item graph ------------------------------------------------------------------------------------------

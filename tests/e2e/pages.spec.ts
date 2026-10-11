@@ -17,6 +17,7 @@ test.describe("every page renders against the real backend", () => {
     `/topics/${topicId}`,
     "/review",
     "/briefing",
+    "/briefing?stale=show&limit=10",
     "/graph",
     "/growth",
     "/growth/career",

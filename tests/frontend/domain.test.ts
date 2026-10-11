@@ -14,6 +14,7 @@ import {
   isUncategorized,
   otherStakeholders,
   sortByMeetingDateDesc,
+  stakeholderOptions,
   tagProblem,
   toSuggestionRow,
   type TopicPriorityInfo,
@@ -73,6 +74,12 @@ describe("topics", () => {
     expect([...topics].sort(byPriorityDesc).map((t) => t.id)).toEqual([
       "critical-high", "critical-low", "major", "minor", "none",
     ]);
+  });
+
+  it("lists the stakeholders of all topics once each, whatever the capitalization, in alphabetical order", () => {
+    const topics = [topic({ stakeholders: ["Ben", " ana "] }), topic({ stakeholders: ["Ana", "ben", "", "Cy"] })];
+    expect(stakeholderOptions(topics)).toEqual(["ana", "Ben", "Cy"]); // the first spelling seen is kept
+    expect(stakeholderOptions([])).toEqual([]);
   });
 });
 

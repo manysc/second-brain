@@ -87,10 +87,27 @@
         "type": "object"
       },
       "FollowUpResponse": {
+        "description": "`maxAgeDays` is the age cut-off that was applied (null when off), `hiddenStaleCount` the items it left out,\nand `totalTopics` the topics with something to raise before `limit` cut the list.",
         "properties": {
           "generatedAt": {
             "title": "Generatedat",
             "type": "string"
+          },
+          "hiddenStaleCount": {
+            "default": 0,
+            "title": "Hiddenstalecount",
+            "type": "integer"
+          },
+          "maxAgeDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxagedays"
           },
           "topics": {
             "items": {
@@ -98,6 +115,11 @@
             },
             "title": "Topics",
             "type": "array"
+          },
+          "totalTopics": {
+            "default": 0,
+            "title": "Totaltopics",
+            "type": "integer"
           }
         },
         "required": [
@@ -1778,6 +1800,48 @@
         "operationId": "get_follow_up_api_follow_up_get",
         "parameters": [
           {
+            "description": "Repeatable: only items of these people",
+            "in": "query",
+            "name": "stakeholder",
+            "required": false,
+            "schema": {
+              "description": "Repeatable: only items of these people",
+              "items": {
+                "type": "string"
+              },
+              "title": "Stakeholder",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Repeatable: only items from these meetings",
+            "in": "query",
+            "name": "meetingId",
+            "required": false,
+            "schema": {
+              "description": "Repeatable: only items from these meetings",
+              "items": {
+                "type": "string"
+              },
+              "title": "Meetingid",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Repeatable: only these topics",
+            "in": "query",
+            "name": "topicId",
+            "required": false,
+            "schema": {
+              "description": "Repeatable: only these topics",
+              "items": {
+                "type": "string"
+              },
+              "title": "Topicid",
+              "type": "array"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -1796,6 +1860,19 @@
               "default": 7,
               "minimum": 0,
               "title": "Duesoondays",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Leave out items with no activity in this many days; 0 turns the cut-off off",
+            "in": "query",
+            "name": "maxAgeDays",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "description": "Leave out items with no activity in this many days; 0 turns the cut-off off",
+              "minimum": 0,
+              "title": "Maxagedays",
               "type": "integer"
             }
           }

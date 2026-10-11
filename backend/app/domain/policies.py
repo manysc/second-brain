@@ -8,6 +8,10 @@ UNCATEGORIZED_TOPIC = "Uncategorized"
 MANUAL_MEETING_ID = "manual"
 MANUAL_MEETING_TITLE = "Manual entries"
 
+# days without activity (see domain.services.follow_up.last_activity) after which an open item is left out of
+# the follow-up digest: nobody closes old items, so without this the digest only ever grows
+FOLLOW_UP_MAX_AGE_DAYS = 30
+
 # cosine similarity between an item and a topic's centroid at/above which the item is filed under that
 # existing topic with no human in the loop (ingestion, review accept without a topic). Suggestions a
 # human confirms use the looser hybrid ranking in domain/services/topic_ranking.py instead.
