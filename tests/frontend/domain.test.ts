@@ -81,6 +81,19 @@ describe("topics", () => {
     expect(stakeholderOptions(topics)).toEqual(["ana", "Ben", "Cy"]); // the first spelling seen is kept
     expect(stakeholderOptions([])).toEqual([]);
   });
+
+  it("combines the variants of one person into a single stakeholder option", () => {
+    const topics = [
+      topic({ stakeholders: ["Akshay", "Akshay / QA (reported)"] }),
+      topic({ stakeholders: ["Akshay and Nando", "Akshay Chowdu", "Anand"] }),
+    ];
+    expect(stakeholderOptions(topics)).toEqual(["Akshay", "Anand", "Nando", "QA"]);
+    // without the bare first name, a full name stays its own option
+    expect(stakeholderOptions([topic({ stakeholders: ["Akshay Chowdu", "Akshay Kumar"] })])).toEqual([
+      "Akshay Chowdu",
+      "Akshay Kumar",
+    ]);
+  });
 });
 
 describe("topic suggestions", () => {

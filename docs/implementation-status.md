@@ -3,6 +3,15 @@
 Entries are a dated log: file and function names in an entry are the ones that existed on its date. The
 2026-10-10 entry moved most of them; [architecture.md](../architecture.md) maps the current layout.
 
+## Briefing: one stakeholder option per person (2026-10-14)
+
+- Domain (`domain/services/follow_up.py`): `FollowUpScope` matches a stakeholder by its words in order as whole words
+  (`_name_words`, `_contains_run`) instead of the whole name, so "Akshay" covers "Akshay Chowdu", "Akshay / QA" and
+  "Akshay and Nando". Old URLs holding a full raw value still match it. REST and MCP contracts unchanged.
+- Frontend (`src/Domain/Entities/FollowUp.ts`): `stakeholderOptions` splits combined entries into people and leaves
+  out a full name when its first name is listed on its own.
+- Tests: `test_follow_up_scope_matches_a_name_inside_its_variants`, and a Vitest case in `tests/frontend/domain.test.ts`.
+
 ## Briefing: age cut-off and filters (2026-10-10)
 
 - Domain (`domain/services/follow_up.py`): `last_activity` / `is_stale` (meeting date, newest note, manual override,

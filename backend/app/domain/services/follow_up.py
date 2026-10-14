@@ -4,6 +4,7 @@ in from other topics through related_ids. Items nothing has happened to for a wh
 whole selection can be narrowed to some people, meetings or topics."""
 from __future__ import annotations
 
+import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -43,8 +44,12 @@ class FollowUpSelection:
     total_topics: int
 
 
-def _name_key(name: str) -> str:
-    return name.strip().casefold()
+def _name_words(name: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"\w+", name.casefold()))
+
+
+def _contains_run(words: Sequence[str], run: Sequence[str]) -> bool:
+    return any(tuple(words[start : start + len(run)]) == tuple(run) for start in range(len(words) - len(run) + 1))
 
 
 @dataclass(frozen=True)
@@ -52,7 +57,7 @@ class FollowUpScope:
     """Narrows a selection to some people, meetings or topics. An empty set does not restrict; within a set any
     match counts, and every non-empty set has to match. Build it with `of`, which normalizes what a person typed."""
 
-    stakeholders: frozenset[str] = frozenset()
+    stakeholders: frozenset[tuple[str, ...]] = frozenset()
     meeting_ids: frozenset[str] = frozenset()
     topic_ids: frozenset[str] = frozenset()
 
@@ -60,9 +65,11 @@ class FollowUpScope:
     def of(
         cls, stakeholders: Iterable[str] = (), meeting_ids: Iterable[str] = (), topic_ids: Iterable[str] = ()
     ) -> FollowUpScope:
-        """Names match whole, ignoring case and surrounding spaces; blank values are dropped."""
+        """A name matches an owner or stakeholder that holds its words in order as whole words, ignoring case, so
+        "Akshay" covers "Akshay Chowdu", "Akshay / QA" and "Akshay and Nando" but not "Akshaya"; blank values are
+        dropped."""
         return cls(
-            stakeholders=frozenset(_name_key(name) for name in stakeholders if name.strip()),
+            stakeholders=frozenset(words for words in map(_name_words, stakeholders) if words),
             meeting_ids=frozenset(value.strip() for value in meeting_ids if value.strip()),
             topic_ids=frozenset(value.strip() for value in topic_ids if value.strip()),
         )
@@ -71,8 +78,8 @@ class FollowUpScope:
         if self.meeting_ids and item.meeting_id not in self.meeting_ids:
             return False
         if self.stakeholders:
-            names = {_name_key(name) for name in (item.owner, *item.stakeholders) if name}
-            if not names & self.stakeholders:
+            names = [_name_words(name) for name in (item.owner, *item.stakeholders) if name]
+            if not any(_contains_run(words, run) for words in names for run in self.stakeholders):
                 return False
         return True
 

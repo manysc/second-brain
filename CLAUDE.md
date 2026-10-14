@@ -13,12 +13,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Three processes plus Docker; there is no single "start everything" script.
 
 ```bash
-docker compose up -d                       # Postgres (pgvector, host :5432) + SeaweedFS S3 (:8333) + backup sidecars
+docker compose up -d                       # Postgres (pgvector, host :5432) + SeaweedFS S3 (:8333) + pgAdmin (:5050) + backup sidecars (to ./backups)
 cd backend && python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt   # bin/python on macOS/Linux
 cd backend && .venv/Scripts/python -m uvicorn app.main:app --reload   # API on :8000 (the Next app expects it there; override with API_BASE_URL)
 npm run dev                                # Next.js UI on :3000
 npm run lint                               # eslint, including the frontend layer-boundary rules
 npx tsc --noEmit                           # typecheck
+npm run build                              # production build
 ```
 
 Frontend tests:
@@ -39,7 +40,7 @@ Backend tests (run from `backend/`, `pytest.ini` sets `pythonpath = .`):
 npm run mcp:test                           # MCP suite only (tests/mcp_tests), via the node launcher
 ```
 
-DB-backed tests skip themselves when Postgres at `DATABASE_URL` is unreachable, so a green run without Docker proves less than it looks (`-rs` lists the skips). `backend/tests/conftest.py` loads `backend/.env`. `tests/domain` and `tests/application` need no database (the latter runs use cases against the fakes in `tests/application/fakes.py`); the `tests/test_*.py` files are integration tests through the real container (`tests/support.py`). Optional: `ruff check` / `mypy` (from `requirements-dev.txt`).
+DB-backed tests skip themselves when Postgres at `DATABASE_URL` is unreachable, so a green run without Docker proves less than it looks (`-rs` lists the skips). `backend/tests/conftest.py` loads `backend/.env`. `tests/domain`, `tests/application` and `tests/presentation` need no database (use cases and the REST app run against the in-memory fakes in `tests/application/fakes.py`); the `tests/test_*.py` files are integration tests through the real container (`tests/support.py`). Optional: `ruff check` / `mypy` (from `requirements-dev.txt`).
 
 `tests/test_contracts.py` compares the REST OpenAPI document and the MCP tool catalog with snapshots in `tests/fixtures/`. After an intended contract change, regenerate them with `.venv/Scripts/python -m tests.contract_snapshots` (a schema docstring is part of the OpenAPI document, so editing one changes the snapshot).
 

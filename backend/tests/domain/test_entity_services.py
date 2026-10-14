@@ -168,6 +168,25 @@ def test_follow_up_scope_narrows_by_person_meeting_and_topic():
     assert len(picked(stakeholders=["  "], meeting_ids=[""])) == 4  # blank values do not restrict
 
 
+def test_follow_up_scope_matches_a_name_inside_its_variants():
+    items = [
+        make.item("m1:Q-1", type="QUESTION", owner="Akshay", stakeholders=("Akshay",)),
+        make.item("m1:Q-2", type="QUESTION", owner=None, stakeholders=("Akshay / QA (reported)",)),
+        make.item("m1:Q-3", type="QUESTION", owner="Akshay and Nando", stakeholders=()),
+        make.item("m1:Q-4", type="QUESTION", owner="Akshay Chowdu", stakeholders=("Akshay Chowdu",)),
+        make.item("m1:Q-5", type="QUESTION", owner="Anand", stakeholders=("Akshaya",)),
+    ]
+
+    def picked(*names):
+        return _ids(_select([make.topic()], items, scope=FollowUpScope.of(stakeholders=names)))
+
+    assert picked("akshay") == ["m1:Q-1", "m1:Q-2", "m1:Q-3", "m1:Q-4"]  # whole words, not "Akshaya"
+    assert picked("Akshay Chowdu") == ["m1:Q-4"]  # every word, in order
+    assert picked("Nando") == ["m1:Q-3"] and picked("qa") == ["m1:Q-2"]
+    assert picked("Ana") == [] and picked("Chowdu Akshay") == []
+    assert picked("Akshay / QA (reported)") == ["m1:Q-2"]  # a full raw value still matches itself
+
+
 def test_follow_up_topic_scope_still_lists_related_items_from_other_topics():
     here, there = make.topic("t1", "Here"), make.topic("t2", "There")
     items = [

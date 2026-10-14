@@ -42,15 +42,37 @@ export type FollowUpQuery = {
   topicIds?: readonly string[];
 };
 
-/** Every name on the topics' items, once each whatever its capitalization, in alphabetical order. */
+function nameWords(name: string): string[] {
+  return name.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
+}
+
+/** "Akshay / QA (reported)" -> Akshay, QA; "Akshay and Nando" -> Akshay, Nando. */
+function peopleIn(stakeholder: string): string[] {
+  return stakeholder
+    .replace(/\([^)]*\)/g, " ")
+    .split(/[/,;&+]|\band\b/i)
+    .map((name) => name.trim())
+    .filter((name) => nameWords(name).length > 0);
+}
+
+/**
+ * Every person named on the topics' items, once each whatever its capitalization, in alphabetical order. Combined
+ * entries are split into their people, and a name whose leading words are another listed name ("Akshay Chowdu"
+ * next to "Akshay") is left out: the backend matches a name by its whole words, so the shorter one covers it.
+ */
 export function stakeholderOptions(topics: readonly Pick<Topic, "stakeholders">[]): string[] {
   const nameByKey = new Map<string, string>();
   for (const topic of topics) {
     for (const stakeholder of topic.stakeholders) {
-      const name = stakeholder.trim();
-      const key = name.toLowerCase();
-      if (name && !nameByKey.has(key)) nameByKey.set(key, name);
+      for (const name of peopleIn(stakeholder)) {
+        const key = nameWords(name).join(" ");
+        if (!nameByKey.has(key)) nameByKey.set(key, name);
+      }
     }
   }
-  return [...nameByKey.values()].sort((a, b) => a.localeCompare(b));
+  const keys = [...nameByKey.keys()];
+  return keys
+    .filter((key) => !keys.some((other) => other !== key && key.startsWith(`${other} `)))
+    .map((key) => nameByKey.get(key)!)
+    .sort((a, b) => a.localeCompare(b));
 }
