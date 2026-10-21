@@ -161,6 +161,20 @@ def test_parse_meetings_from_s3_defaults_null_source_url_to_the_filename(s3_env)
         assert meetings[0].source_url == "synthetic-null-source-url.json"
 
 
+def test_parse_meetings_from_s3_accepts_a_null_meeting_id(s3_env):
+    """The extraction tool sometimes emits `"meeting_id": null`; identity comes from the S3 key anyway."""
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        _upload(client, "synthetic-null-meeting-id.json")
+
+        keys = s3_store.list_extract_keys()
+        meetings = _parse(keys[0])
+        assert len(meetings) == 1
+        assert meetings[0].id == "synthetic-null-meeting-id"
+        assert len(meetings[0].items) == 1
+
+
 def test_parse_meetings_from_s3_finds_bundle_entries_under_any_list_key(s3_env):
     """The extraction tool isn't stable about naming its bundle's list of per-meeting entries
     ("extractions" vs "meetings" seen in practice) or repeating schema_version on each entry, so
@@ -188,8 +202,10 @@ def test_parse_meetings_from_s3_raises_a_clear_error_for_unrecognized_files(s3_e
         _upload(client, "synthetic-unrecognized.json")
 
         keys = s3_store.list_extract_keys()
-        with pytest.raises(MalformedExtract, match="not a recognized single-meeting or bundle extraction file"):
+        with pytest.raises(MalformedExtract, match="not a recognized single-meeting or bundle extraction file") as raised:
             _parse(keys[0])
+        # names why the file failed as a single meeting, not just that it isn't recognized
+        assert "meeting: Field required" in str(raised.value)
 
 
 def test_parse_meetings_from_s3_splits_a_flattened_register_by_embedded_source_meeting(s3_env):

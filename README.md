@@ -119,6 +119,12 @@ accepts this and `ingest._normalize_extraction` falls back to the extraction fil
 `YP-MS_1-1_Meeting-Extract_092326.json`) so the meeting still carries a human-identifiable reference
 back to its source file instead of failing ingestion outright.
 
+The same goes for `"meeting_id": null`: the JSON's own meeting id is never used (the S3 key is), so
+`RawMeetingInfo.meeting_id` is optional. (Changelog: a null `meeting_id`, as in
+`YP-MS_1-1_Meeting-Extract_101526.json`, used to abort the whole ingestion run with "is not a recognized
+single-meeting or bundle extraction file". That error now also names the fields that failed validation,
+e.g. `meeting.meeting_id: Input should be a valid string`.)
+
 #### Ingesting a multi-meeting bundle
 
 A file can also be a **bundle** covering several meetings at once (e.g. a register export), instead

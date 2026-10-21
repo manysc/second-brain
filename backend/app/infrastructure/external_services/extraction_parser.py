@@ -51,7 +51,9 @@ class RawCandidate(BaseModel):
 
 
 class RawMeetingInfo(BaseModel):
-    meeting_id: str
+    # never read for identity (the S3 key is, see `derive_meeting_identity`) and sometimes emitted as
+    # null by the extraction tool, so it must not be required
+    meeting_id: str | None = None
     title: str
     date: str
     source_url: str | None = None
@@ -255,6 +257,19 @@ def _find_bundle_entries(raw: dict) -> list[dict] | None:
     return None
 
 
+_MAX_REPORTED_ERRORS = 3
+
+
+def _summarize_validation_error(error: ValidationError) -> str:
+    # why the file failed as a single meeting, so an unrecognized extract names the offending field
+    # instead of only saying it isn't recognized
+    errors = error.errors()
+    parts = [f"{'.'.join(str(part) for part in e['loc'])}: {e['msg']}" for e in errors[:_MAX_REPORTED_ERRORS]]
+    if len(errors) > _MAX_REPORTED_ERRORS:
+        parts.append(f"(+{len(errors) - _MAX_REPORTED_ERRORS} more)")
+    return "; ".join(parts)
+
+
 # --- entry points ----------------------------------------------------------------------------------------
 
 
@@ -272,10 +287,11 @@ def parse_extract(key: str, text: str) -> list[ExtractedMeeting]:
     plain single-meeting id the same key would otherwise produce. Raises ValueError for anything else."""
     raw = repair_json(text)
     meeting_id, variant = derive_meeting_identity(key)
+    single_meeting_error: ValidationError | None = None
     try:
         parsed = RawExtraction.model_validate(raw)
-    except ValidationError:
-        pass
+    except ValidationError as error:
+        single_meeting_error = error
     else:
         split = _split_by_embedded_source_meeting(parsed)
         if split is None:
@@ -300,7 +316,8 @@ def parse_extract(key: str, text: str) -> list[ExtractedMeeting]:
 
     bundle_entries = _find_bundle_entries(raw)
     if bundle_entries is None:
-        raise ValueError(f"'{key}' is not a recognized single-meeting or bundle extraction file")
+        detail = f": {_summarize_validation_error(single_meeting_error)}" if single_meeting_error else ""
+        raise ValueError(f"'{key}' is not a recognized single-meeting or bundle extraction file{detail}")
     return [
         _normalize_extraction(RawExtraction.model_validate(entry), f"{meeting_id}-{index + 1}", variant, key)
         for index, entry in enumerate(bundle_entries)
