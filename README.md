@@ -9,6 +9,7 @@ docker compose up -d                                        # Postgres (pgvector
 cd backend && .venv/Scripts/python -m uvicorn app.main:app --reload   # API on :8000 (bin/python on macOS/Linux)
 npm install
 npm run dev                                                 # UI on :3000
+npm run mcp:start                                           # MCP Server
 ```
 
 Open `http://localhost:3000/dashboard`. The backend section below covers the one-time Python setup and seeding.
@@ -105,11 +106,14 @@ before (the whole filename stem is the meeting key). Files that don't share a `<
 still treated as unrelated meetings, even if their content is similar.
 
 Within one canonical meeting, a new idea/decision/action/question is compared by embedding cosine
-distance against that meeting's existing items before insert; a close match (same
+distance against that meeting's existing items **of the same type** before insert; a close match (same
 `DUPLICATE_MATCH_THRESHOLD` used by the review-accept dedup, defined in `app/domain/policies.py`) reinforces the
 existing item's confidence to `HIGH` instead of inserting a duplicate row. This dedup is scoped to
 the one meeting, not global — items that merely *sound* similar across different meetings are left
-alone, same as the paragraph above.
+alone, same as the paragraph above. It is also scoped to the item type: an action that restates a
+decision ("Rename the KPI label" as both the decision and the follow-up) is kept as its own action,
+since folding it into the decision would hide an open follow-up. (Before 2026-10-30 the match ignored
+type; items absorbed that way are created on the next ingest, because their ids were never stored.)
 
 #### Meetings with no source link
 
@@ -262,7 +266,7 @@ Filing without a human in the loop is unchanged: ingestion auto-filing, and acce
 
 `/ask` (`src/Infrastructure/ExternalServices/ClaudeAgentSdkAsk.ts`, reached through `src/app/api/ask/route.ts`) calls `@anthropic-ai/claude-agent-sdk`'s `query()` with no auth option set, so it authenticates with whatever credential the Agent SDK finds in the environment. With no `ANTHROPIC_API_KEY` set, it falls back to the logged-in Claude Code / VS Code extension session (`~/.claude/.credentials.json`) — that is, your Claude Pro OAuth session, not a raw Anthropic API key. That means data-sharing settings for these requests are governed by that account's own "Help improve Claude" setting (claude.ai/settings/data-privacy-controls), not by anything in this app.
 
-`/ask` and Claude Code can both change data through the MCP server, but only when asked: `brain_create_topic` (new empty topic), `brain_move_items` (move up to 25 items into one topic, all or nothing) and `brain_update_item` (single item status, priority or topic), plus the add/edit-item and note tools. (Changelog: writes were off before. `.mcp.json` now defaults `BRAIN_MCP_ALLOW_WRITES` to `true`, and `/ask` launches the server with writes on as actor `second-brain-ask`. `/ask` still denies `brain_delete_item`. Set `BRAIN_MCP_ALLOW_WRITES=false` to turn writes off for Claude Code. See `docs/mcp-server.md`.)
+`/ask` and Claude Code can both change data through the MCP server, but only when asked: `brain_create_topic` (new empty topic), `brain_move_items` (move up to 25 items into one topic, all or nothing) and `brain_update_item` (single item status, priority or topic), plus the add/edit-item and note tools. (Changelog: writes were off before. `.mcp.json` now defaults `BRAIN_MCP_ALLOW_WRITES` to `true`, and `/ask` launches the server with writes on as actor `second-brain-ask`. `/ask` still denies `brain_delete_item`. Set `BRAIN_MCP_ALLOW_WRITES=false` to turn writes off for Claude Code. To use the tools from sessions in other folders, register the server at user scope; `docs/mcp-server.md` has the command. See `docs/mcp-server.md`.)
 
 ## Other implemented features
 

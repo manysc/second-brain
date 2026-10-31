@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import ColumnElement, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer, selectinload
 
@@ -16,6 +16,7 @@ from app.domain.entities.topic import Topic
 from app.domain.exceptions import TopicNameConflict
 from app.domain.policies import UNCATEGORIZED_TOPIC
 from app.domain.services.topic_ranking import TopicProfile
+from app.domain.value_objects.item_type import ItemType
 from app.domain.value_objects.priority import TopicPriorityHistoryEntry
 from app.infrastructure.persistence import mappers
 from app.infrastructure.persistence.orm_models import (
@@ -138,14 +139,22 @@ class SqlAlchemyKnowledgeItemRepository:
         )
 
     def find_duplicate(
-        self, embedding: Embedding, *, max_distance: float, meeting_id: str | None = None
+        self,
+        embedding: Embedding,
+        *,
+        max_distance: float,
+        meeting_id: str | None = None,
+        item_type: ItemType | None = None,
     ) -> KnowledgeItem | None:
         distance = KnowledgeItemRow.embedding.cosine_distance(embedding)
-        conditions = [KnowledgeItemRow.embedding.is_not(None)]
+        conditions: list[ColumnElement[bool]] = [KnowledgeItemRow.embedding.is_not(None)]
         if meeting_id is not None:
             # scoped to one meeting so two LLM extracts of the same meeting merge, without risking
             # false merges against unrelated meetings the way a global similarity search would
             conditions.append(KnowledgeItemRow.meeting_id == meeting_id)
+        if item_type is not None:
+            # an action that restates a decision is still its own follow-up, not a duplicate of it
+            conditions.append(KnowledgeItemRow.type == item_type)
         result = self._session.execute(
             select(KnowledgeItemRow, distance).where(*conditions).order_by(distance).limit(1)
         ).first()

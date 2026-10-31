@@ -11,6 +11,7 @@ from app.domain.entities.meeting import Meeting
 from app.domain.entities.review_candidate import ReviewCandidate
 from app.domain.entities.topic import Topic
 from app.domain.services.topic_ranking import TopicProfile
+from app.domain.value_objects.item_type import ItemType
 from app.domain.value_objects.priority import TopicPriorityHistoryEntry
 
 
@@ -58,10 +59,15 @@ class KnowledgeItemRepository(Protocol):
         ...
 
     def find_duplicate(
-        self, embedding: Embedding, *, max_distance: float, meeting_id: str | None = None
+        self,
+        embedding: Embedding,
+        *,
+        max_distance: float,
+        meeting_id: str | None = None,
+        item_type: ItemType | None = None,
     ) -> KnowledgeItem | None:
-        """The nearest embedded item (within one meeting when given) if its cosine distance is below
-        `max_distance`. It is returned without its vector loaded."""
+        """The nearest embedded item (within one meeting and of one type when given) if its cosine distance
+        is below `max_distance`. It is returned without its vector loaded."""
         ...
 
     def nearest(

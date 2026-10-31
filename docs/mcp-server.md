@@ -69,6 +69,14 @@ Optional lint and types: `pip install -r backend/requirements-dev.txt`, then, fr
 
 **Writes** are on by default for Claude Code in this repo: `.mcp.json` passes `BRAIN_MCP_ALLOW_WRITES` through with a default of `true`. To turn them off, export `BRAIN_MCP_ALLOW_WRITES=false` before starting Claude Code. The server itself still defaults to `false` when the variable is unset, so any other client must opt in. Reconnect (`/mcp`) after changing it.
 
+**From other repos.** `.mcp.json` only applies to sessions started in this repo. To use the tools from any folder, register the server at user scope with an absolute path (the launcher resolves `backend/` from its own location, so the working directory does not matter):
+
+```bash
+claude mcp add-json --scope user brain-assistant '{"type":"stdio","command":"node","args":["C:/path/to/second-brain/scripts/mcp-server.mjs"],"env":{"NODE_ENV":"development","BRAIN_ENV":"development","BRAIN_MCP_ALLOW_WRITES":"true"}}'
+```
+
+That entry hard-codes writes on, so exporting `BRAIN_MCP_ALLOW_WRITES=false` does not affect it; remove it (`claude mcp remove brain-assistant -s user`) or re-add it without the flag. Inside this repo the project entry still takes precedence over the user one.
+
 A server added while a session is running is not discovered until the session restarts or you run `/mcp` and reconnect.
 
 ## Inspector

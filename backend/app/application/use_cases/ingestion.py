@@ -120,11 +120,11 @@ class IngestExtracts:
                 if current is None:
                     assert vector is not None and matcher is not None
                     duplicate = uow.items.find_duplicate(
-                        vector, max_distance=DUPLICATE_MATCH_THRESHOLD, meeting_id=extracted.id
+                        vector, max_distance=DUPLICATE_MATCH_THRESHOLD, meeting_id=extracted.id, item_type=incoming.type
                     )
                     if duplicate is not None:
-                        # a different LLM's near-duplicate of an item already ingested for this
-                        # meeting - reinforce it instead of adding a second, duplicate item
+                        # a different LLM's near-duplicate of an item of the same type already ingested
+                        # for this meeting - reinforce it instead of adding a second, duplicate item
                         if duplicate.reinforce():
                             uow.items.save(duplicate)
                             changed = True

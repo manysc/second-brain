@@ -549,6 +549,20 @@ def test_first_ingest_files_items_by_name_or_proposes_a_new_topic(world):
     assert world.db.topic("billing").calculation is not None  # everything is recalculated after a change
 
 
+def test_an_action_worded_like_a_decision_of_the_same_meeting_is_still_created(world):
+    seed_topics(world)
+    world.source.extracts["m9.json"] = [
+        extract(
+            "m9",
+            make.extracted("m9:D-1", type="DECISION", theme="billing", description="Rename the KPI label"),
+            make.extracted("m9:A-1", type="ACTION", theme="billing", description="Rename the KPI label"),
+        )
+    ]
+    world.app.ingest_extracts()
+    assert (world.db.item("m9:D-1").type, world.db.item("m9:A-1").type) == ("DECISION", "ACTION")
+    assert world.db.item("m9:D-1").confidence == "MEDIUM"  # not reinforced: the action is no duplicate of it
+
+
 def test_reingesting_an_unchanged_extract_changes_and_embeds_nothing(world):
     seed_topics(world)
     world.source.extracts["m9.json"] = [extract("m9", make.extracted("m9:A-1", theme="Billing", description="Invoice export job"))]

@@ -102,11 +102,13 @@ class _Items:
             {i.id: i.related_ids for i in self._s.items.values()},
         )
 
-    def find_duplicate(self, embedding, *, max_distance, meeting_id=None):
+    def find_duplicate(self, embedding, *, max_distance, meeting_id=None, item_type=None):
         candidates = [
             (_distance(embedding, i.embedding), i)
             for i in self._s.items.values()
-            if i.embedding is not None and (meeting_id is None or i.meeting_id == meeting_id)
+            if i.embedding is not None
+            and (meeting_id is None or i.meeting_id == meeting_id)
+            and (item_type is None or i.type == item_type)
         ]
         if not candidates:
             return None
