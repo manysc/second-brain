@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
-
 from app.application.dtos import KnowledgeItemDTO, ReviewCandidateDTO, TopicProposalDTO
 from app.application.interfaces.repositories import UnitOfWorkFactory
 from app.application.interfaces.services import Embedder, IdGenerator
@@ -22,7 +20,7 @@ from app.domain.exceptions import (
     TopicNotFound,
     TopicProposalNotFound,
 )
-from app.domain.policies import DUPLICATE_MATCH_THRESHOLD, ITEM_TOPIC_MATCH_SIMILARITY
+from app.domain.policies import DUPLICATE_MATCH_THRESHOLD
 from app.domain.services import similarity
 from app.domain.services.topic_ranking import confident_topic_id
 from app.domain.value_objects.status import ReviewStatus
@@ -31,8 +29,8 @@ from app.domain.value_objects.status import ReviewStatus
 @dataclass(frozen=True)
 class ListPendingReview:
     """Candidates still awaiting a decision, newest meeting first. Each carries the best-ranked existing topic
-    (when a confident match) to pre-select the review page's topic picker - deliberately looser than the
-    strict centroid match applied when a candidate is accepted without a topic, since a human confirms this one."""
+    (when a confident match) to pre-select the review page's topic picker - the same topic accepting the
+    candidate without one would file it under."""
 
     uow: UnitOfWorkFactory
     embedder: Embedder
@@ -56,13 +54,15 @@ class ListPendingReview:
 @dataclass(frozen=True)
 class DecideReviewCandidate:
     """Accepts or rejects a pending candidate. `topic_id` only matters when accepting a candidate that isn't a
-    duplicate: a topic id files the new item there, "" files it in Uncategorized, and None auto-matches the
-    closest existing topic (falling back to Uncategorized). Topics are never created here, except Uncategorized."""
+    duplicate: a topic id files the new item there, "" files it in Uncategorized, and None files it under the
+    ranker's top topic when that is at least a MEDIUM-confidence match (falling back to Uncategorized) - the
+    same bar ingestion uses. Topics are never created here, except Uncategorized."""
 
     uow: UnitOfWorkFactory
     embedder: Embedder
     ids: IdGenerator
     recalculator: PriorityRecalculator
+    rankers: TopicRankerCache
 
     def __call__(self, candidate_id: str, status: ReviewStatus, topic_id: str | None = None) -> ReviewCandidateDTO:
         affected_topic_id: str | None = None
@@ -87,15 +87,8 @@ class DecideReviewCandidate:
                         if topic is None:
                             raise TopicNotFound(topic_id)
                     elif topic_id is None:
-                        topics, items_by_topic = assembler.load_topics(uow)
-                        centroids = similarity.topic_centroids(
-                            {
-                                t.id: [item.embedding for item in items_by_topic[t.id]]
-                                for t in topics
-                                if not t.is_uncategorized
-                            }
-                        )
-                        match_id, _ = similarity.closest_topic(np.array(vector), centroids, ITEM_TOPIC_MATCH_SIMILARITY)
+                        ranked = self.rankers.get(uow).rank(vector, candidate.description, top_n=1)
+                        match_id = confident_topic_id(ranked)
                         topic = uow.topics.get(match_id) if match_id else None
                     if topic is None:
                         topic = ensure_uncategorized_topic(uow, self.ids)

@@ -11,8 +11,8 @@ from app.application.dtos import IngestSummary
 from app.application.exceptions import IngestionAlreadyRunning
 from app.application.interfaces.repositories import UnitOfWork, UnitOfWorkFactory
 from app.application.interfaces.services import Embedder, ExtractSource, IdGenerator
-from app.application.services import assembler
 from app.application.services.priority_recalculation import PriorityRecalculator
+from app.application.services.topic_ranker_cache import TopicRankerCache
 from app.application.services.uncategorized import ensure_uncategorized_topic
 from app.domain.entities.knowledge_item import KnowledgeItem
 from app.domain.entities.meeting import Meeting
@@ -31,6 +31,7 @@ class IngestExtracts:
     embedder: Embedder
     ids: IdGenerator
     recalculator: PriorityRecalculator
+    rankers: TopicRankerCache
     # startup and manual runs must not overlap: two concurrent upserts of the same extract race on the
     # near-duplicate check and can insert duplicate rows
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
@@ -169,12 +170,10 @@ class IngestExtracts:
         return changed
 
     def _topic_matcher(self, uow: UnitOfWork) -> TopicMatcher:
-        topics, items_by_topic = assembler.load_topics(uow)
+        # the ranker's version reflects this unit of work, so each extract sees what earlier ones filed
         return TopicMatcher(
-            [
-                TopicSnapshot(topic.id, topic.name, [item.embedding for item in items_by_topic[topic.id]])
-                for topic in topics
-            ],
+            [TopicSnapshot(topic.id, topic.name) for topic in uow.topics.list_all()],
+            ranker=self.rankers.get(uow),
             related_topic_ids=uow.items.topic_ids_of,
             ensure_uncategorized=lambda: ensure_uncategorized_topic(uow, self.ids).id,
         )

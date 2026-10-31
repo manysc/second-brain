@@ -17,6 +17,7 @@ from app.domain.services.follow_up import (
 from app.domain.services.item_graph import build_item_edges, related_items
 from app.domain.services.search_ranking import rank_search_hits
 from app.domain.services.topic_matching import TopicMatcher, TopicSnapshot
+from app.domain.services.topic_ranking import TopicProfile, TopicRanker
 from app.domain.value_objects.priority import (
     ManualPriorityOverride,
     TopicPriorityHistoryEntry,
@@ -275,6 +276,19 @@ def test_most_similar_and_similar_pairs():
 # -- topic matching (ingestion) --------------------------------------------------------------------------
 
 
+BILLING = TopicSnapshot("billing", "Billing")
+HIRING = TopicSnapshot("hiring", "Hiring")
+UNCATEGORIZED = TopicSnapshot("unc", "Uncategorized")
+NEAR_BILLING, NEAR_HIRING, UNLIKE_ANYTHING = [1.0, 0.05, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]
+# what the ranker knows about the topics' items (Uncategorized is never a profile)
+RANKER = TopicRanker(
+    [
+        TopicProfile("billing", "Billing", item_embeddings=[[1.0, 0.0, 0.0], [0.9, 0.1, 0.0]]),
+        TopicProfile("hiring", "Hiring", item_embeddings=[[0.0, 1.0, 0.0]]),
+    ]
+)
+
+
 def _matcher(topics, stored_topics=None, created=None):
     stored_topics = stored_topics or {}
 
@@ -285,30 +299,33 @@ def _matcher(topics, stored_topics=None, created=None):
         (created if created is not None else []).append("created")
         return "unc-new"
 
-    return TopicMatcher(topics, related_topic_ids=related_topic_ids, ensure_uncategorized=ensure_uncategorized)
+    return TopicMatcher(
+        topics, ranker=RANKER, related_topic_ids=related_topic_ids, ensure_uncategorized=ensure_uncategorized
+    )
 
 
-BILLING = TopicSnapshot("billing", "Billing", [[1.0, 0.0, 0.0], [0.9, 0.1, 0.0], None])
-HIRING = TopicSnapshot("hiring", "Hiring", [[0.0, 1.0, 0.0]])
-UNCATEGORIZED = TopicSnapshot("unc", "Uncategorized", [[0.0, 0.0, 1.0]])
-NEAR_BILLING, NEAR_HIRING, UNLIKE_ANYTHING = [1.0, 0.05, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]
-
-
-def test_matching_prefers_name_then_related_items_then_the_closest_centroid():
+def test_matching_prefers_name_then_related_items_then_a_confident_ranking():
     matcher = _matcher([BILLING, HIRING, UNCATEGORIZED], stored_topics={"m1:B-7": "hiring", "m1:B-8": "unc"})
     assert matcher.resolve(make.extracted(theme=" billing "), NEAR_HIRING) == ("billing", None)  # name beats vector
     assert matcher.resolve(make.extracted(theme="Offers", related_ids=("B-7", "B-8")), NEAR_BILLING) == ("hiring", None)
     assert matcher.resolve(make.extracted(theme="Invoices"), NEAR_BILLING) == ("billing", None)
-    # Uncategorized's own items are never a matching signal, so a vector identical to them still matches nothing
     assert matcher.resolve(make.extracted(theme="Offsite"), UNLIKE_ANYTHING) == ("unc", "Offsite")
     assert matcher.name_of("billing") == "Billing"
 
 
-def test_items_without_a_theme_go_to_uncategorized_without_a_proposal_creating_it_once():
+def test_items_without_a_theme_are_still_matched_by_related_items_and_ranking():
+    # the extractor only sets a theme on ideas, so decisions, actions and questions arrive without one
+    matcher = _matcher([BILLING, HIRING, UNCATEGORIZED], stored_topics={"m1:B-7": "hiring"})
+    assert matcher.resolve(make.extracted(theme=None, related_ids=("B-7",)), UNLIKE_ANYTHING) == ("hiring", None)
+    assert matcher.resolve(make.extracted(theme=None), NEAR_BILLING) == ("billing", None)
+    assert matcher.resolve(make.extracted(theme="Uncategorized"), NEAR_BILLING) == ("billing", None)
+
+
+def test_unmatched_items_go_to_uncategorized_creating_it_once_and_propose_only_a_real_theme():
     created: list[str] = []
     matcher = _matcher([BILLING], created=created)
-    assert matcher.resolve(make.extracted(theme=None), NEAR_BILLING) == ("unc-new", None)
-    assert matcher.resolve(make.extracted(theme="uncategorized"), NEAR_BILLING) == ("unc-new", None)
+    assert matcher.resolve(make.extracted(theme=None), UNLIKE_ANYTHING) == ("unc-new", None)
+    assert matcher.resolve(make.extracted(theme="uncategorized"), UNLIKE_ANYTHING) == ("unc-new", None)
     assert matcher.resolve(make.extracted(theme="Unknown thing"), UNLIKE_ANYTHING) == ("unc-new", "Unknown thing")
     assert created == ["created"] and matcher.name_of("unc-new") == "Uncategorized"
 
@@ -330,10 +347,16 @@ def test_batch_resolution_propagates_topics_across_links_in_any_direction():
     }
 
 
-def test_filed_items_shift_the_centroid_for_later_items_in_the_run():
-    matcher = _matcher([TopicSnapshot("empty", "Empty topic", []), UNCATEGORIZED])
-    assert matcher.resolve(make.extracted(theme="Other"), NEAR_HIRING) == ("unc", "Other")
-    matcher.record("empty", NEAR_HIRING)
-    matcher.record("unc", NEAR_BILLING)  # Uncategorized never becomes a matching signal
-    assert matcher.resolve(make.extracted(theme="Other"), NEAR_HIRING) == ("empty", None)
-    assert matcher.resolve(make.extracted(theme="Other"), NEAR_BILLING) == ("unc", "Other")
+def test_a_topic_the_ranker_guessed_is_not_passed_on_to_linked_items():
+    # links between items of one extract are loose: only a named topic (or a stored item's) spreads along them
+    matcher = _matcher([BILLING, HIRING, UNCATEGORIZED])
+    entries = [
+        (make.extracted("m1:A-1", theme=None, related_ids=("A-2",)), NEAR_BILLING),  # ranker: Billing
+        (make.extracted("m1:A-2", theme=None), NEAR_HIRING),  # ranker: Hiring, not A-1's guess
+        (make.extracted("m1:A-3", theme=None, related_ids=("A-1",)), UNLIKE_ANYTHING),  # nothing to go on
+    ]
+    assert matcher.resolve_batch(entries) == {
+        "m1:A-1": ("billing", None),
+        "m1:A-2": ("hiring", None),
+        "m1:A-3": ("unc", None),
+    }

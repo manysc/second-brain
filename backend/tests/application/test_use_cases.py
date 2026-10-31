@@ -633,6 +633,32 @@ def test_two_extracts_of_one_meeting_merge_and_count_once(world):
     assert world.db.item("m9:gpt:A-8").topic_id == "hiring"
 
 
+def test_items_without_a_theme_are_filed_by_meaning_or_left_uncategorized_without_a_proposal(world):
+    seed_topics(world)
+    world.source.extracts["m9.json"] = [
+        extract(
+            "m9",
+            make.extracted("m9:A-1", theme=None, description="Invoice export job"),  # close to Billing's item
+            make.extracted("m9:Q-1", type="QUESTION", theme=None, description="Plan the offsite"),  # close to nothing
+        )
+    ]
+    world.app.ingest_extracts()
+    assert world.db.item("m9:A-1").topic_id == "billing" and world.db.item("m9:A-1").suggested_topic is None
+    offsite = world.db.item("m9:Q-1")
+    assert (offsite.topic_id, offsite.suggested_topic) == (world.db.topic_named("Uncategorized").id, None)
+
+
+def test_a_later_extract_of_the_same_run_matches_items_an_earlier_one_filed(world):
+    seed_topics(world)
+    offsite = make.topic("offsite", "Offsite")  # no items yet: only the name can match it at first
+    world.db.seed(offsite)
+    world.source.extracts["a.json"] = [extract("m8", make.extracted("m8:A-1", theme="Offsite", description="Plan the offsite"))]
+    world.embedder.vectors["Book the offsite venue"] = [0.0, 0.05, 1.0, 0.0]
+    world.source.extracts["b.json"] = [extract("m9", make.extracted("m9:A-1", theme=None, description="Book the offsite venue"))]
+    world.app.ingest_extracts()
+    assert world.db.item("m9:A-1").topic_id == "offsite"
+
+
 def test_related_items_of_one_extract_are_filed_together(world):
     seed_topics(world)
     world.source.extracts["m9.json"] = [

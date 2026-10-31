@@ -4,6 +4,7 @@ reaches the store without save()/add() followed by commit() - a forgotten save o
 from __future__ import annotations
 
 import copy
+import hashlib
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
@@ -30,7 +31,6 @@ class State:
         self.topics: dict[str, Topic] = {}
         self.candidates: dict[str, ReviewCandidate] = {}
         self.history: list[TopicPriorityHistoryEntry] = []
-        self.version = 0
 
 
 def _distance(a, b) -> float:
@@ -183,7 +183,14 @@ class _Topics:
             stored_target.attach_image(image)
 
     def ranking_version(self):
-        return str(self._s.version)
+        # like the real query (which runs after an autoflush): any topic or item change in this unit of work,
+        # committed or not, gives a new version
+        topics = sorted((t.id, t.name, tuple(t.tags)) for t in self._s.topics.values())
+        items = sorted(
+            (i.id, i.topic_id or "", i.description, tuple(i.embedding) if i.embedding is not None else ())
+            for i in self._s.items.values()
+        )
+        return hashlib.md5(repr((topics, items)).encode()).hexdigest()
 
     def ranking_profiles(self):
         return [
@@ -259,7 +266,6 @@ class FakeUnitOfWork:
         del self._work
 
     def commit(self) -> None:
-        self._work.version += 1
         self._database.state = copy.deepcopy(self._work)
         self._database.commits += 1
 
@@ -287,7 +293,6 @@ class FakeDatabase:
                 ReviewCandidate: self.state.candidates,
             }[type(entity)]
             target[entity.id] = copy.deepcopy(entity)
-        self.state.version += 1
 
     def item(self, item_id: str) -> KnowledgeItem:
         return self.state.items[item_id]

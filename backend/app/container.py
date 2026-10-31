@@ -200,11 +200,11 @@ def build_container(
         get_priority_history=priority.GetPriorityHistory(uow),
         get_recent_escalations=priority.GetRecentEscalations(uow, clock),
         list_pending_review=review.ListPendingReview(uow, embedder, rankers),
-        decide_review_candidate=review.DecideReviewCandidate(uow, embedder, ids, recalculator),
+        decide_review_candidate=review.DecideReviewCandidate(uow, embedder, ids, recalculator, rankers),
         list_topic_proposals=review.ListTopicProposals(uow, rankers),
         accept_topic_proposal=review.AcceptTopicProposal(uow, ids, recalculator),
         reject_topic_proposal=review.RejectTopicProposal(uow),
-        ingest_extracts=ingestion.IngestExtracts(uow, extract_source, embedder, ids, recalculator),
+        ingest_extracts=ingestion.IngestExtracts(uow, extract_source, embedder, ids, recalculator, rankers),
         check_storage_health=health.CheckStorageHealth(uow),
     )
 

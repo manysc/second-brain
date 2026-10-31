@@ -86,8 +86,10 @@ def confidence_band(score: float) -> SuggestionConfidence:
 
 
 def confident_topic_id(ranked: Sequence[RankedTopic]) -> str | None:
-    """The top-ranked topic when it's at least a MEDIUM-confidence match - used to pre-fill a choice
-    a human still confirms, never to file anything automatically."""
+    """The top-ranked topic when it's at least a MEDIUM-confidence match. It pre-fills choices a human
+    confirms and is also the bar for filing with no human in the loop (ingestion, review accept without a
+    topic): cross-validated on the filed decisions, actions and questions, it filed 40% of them at 88%
+    precision, where the centroid >= 0.6 match it replaced filed 33% at 79%."""
     if not ranked or confidence_band(ranked[0].score) == "LOW":
         return None
     return ranked[0].topic_id
@@ -129,11 +131,11 @@ class TopicRanker:
         if description_index_factory is not None:
             self._description_index = description_index_factory([list(p.item_descriptions) for p in usable])
 
-    def rank(self, vector: Sequence[float], text: str, top_n: int = DEFAULT_CANDIDATES) -> list[RankedTopic]:
+    def rank(self, vector: Sequence[float] | np.ndarray, text: str, top_n: int = DEFAULT_CANDIDATES) -> list[RankedTopic]:
         return self.rank_many([vector], [text], top_n)[0]
 
     def rank_many(
-        self, vectors: Sequence[Sequence[float]], texts: Sequence[str], top_n: int = DEFAULT_CANDIDATES
+        self, vectors: Sequence[Sequence[float] | np.ndarray], texts: Sequence[str], top_n: int = DEFAULT_CANDIDATES
     ) -> list[list[RankedTopic]]:
         """Best `top_n` topics per item, highest score first."""
         if not self._ids or not len(vectors):

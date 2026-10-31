@@ -46,14 +46,6 @@ def test_centroids_skip_missing_vectors_and_empty_topics():
     assert similarity.centroid([]) is None
 
 
-def test_closest_topic_requires_the_minimum_similarity():
-    centroids = {"x": np.array([1.0, 0.0]), "y": np.array([0.0, 1.0])}
-    assert similarity.closest_topic(np.array([0.9, 0.1]), centroids, 0.6)[0] == "x"
-    topic_id, best = similarity.closest_topic(np.array([1.0, 1.0]), centroids, 0.9)
-    assert topic_id is None and best == pytest.approx(0.7071, abs=1e-3)
-    assert similarity.closest_topic(np.array([1.0, 0.0]), {}, 0.1) == (None, -1.0)
-
-
 def _profiles() -> list[TopicProfile]:
     return [
         TopicProfile("billing", "Billing exports", (), [[1.0, 0.0, 0.0], [0.9, 0.1, 0.0]], ["parquet export job", "invoice csv"]),

@@ -3,6 +3,31 @@
 Entries are a dated log: file and function names in an entry are the ones that existed on its date. The
 2026-10-10 entry moved most of them; [architecture.md](../architecture.md) maps the current layout.
 
+## Ingestion topic matching: hybrid ranker, items without a theme (2026-10-31)
+
+- Why: 60 items had to be filed out of Uncategorized by hand. The extractor sets `theme` only on ideas (0 of 1,361
+  decisions, actions and questions in S3 had one), and `TopicMatcher.resolve` sent a theme-less item to Uncategorized
+  before trying related items or similarity.
+- Domain (`domain/services/topic_matching.py`): related-item vote and similarity now run without a theme. The
+  similarity step is `confident_topic_id(TopicRanker.rank(...))` (MEDIUM band or better) instead of centroid ≥ 0.6.
+  `TopicSnapshot` holds only id and name; `record()` (in-run centroid learning) is gone. Removed
+  `ITEM_TOPIC_MATCH_SIMILARITY` (`domain/policies.py`) and `similarity.closest_topic`.
+- Only a named or linked topic spreads along an extract's `related_candidate_ids`, and only to items still in
+  Uncategorized. A first version also spread ranker matches: re-ingesting October's items, those spread topics
+  matched where a person had filed the item 14 times out of 50, so ranker matches no longer spread.
+- Application: `IngestExtracts` and `DecideReviewCandidate` take the shared `TopicRankerCache`. Its version is read
+  inside the ingestion unit of work (after an autoflush), so each extract is ranked against what earlier extracts of
+  the same run filed. Cost: one ranker build (~1 s) per extract with new items; an unchanged restart builds none.
+- Measured (read-only, live DB, 5-fold CV over 1,499 filed decisions/actions/questions): centroid ≥ 0.6 filed 33% at
+  79% precision; MEDIUM+ files 40% at 88%.
+- End to end (copy of the live DB with October's items deleted, then ingested from S3, against where people have
+  those items now): decisions/actions/questions auto-filed 34 → 69 (correct 31 → 65); ideas 53 → 48 (correct
+  48 → 42); left in Uncategorized 443 → 413 of 530. The 60 items filed by hand on 2026-10-31 all score LOW and
+  would still land in Uncategorized; naming their topic is up to the extractor (`docs/extraction-theme-guidance.md`).
+- Tests: domain matcher tests rebuilt on a `TopicRanker`, plus one that a ranker match does not spread along links;
+  use-case tests for theme-less ingestion and for a later extract matching an earlier one. The fake `ranking_version` now hashes the working state like the real query.
+  REST and MCP contracts unchanged.
+
 ## Briefing: one stakeholder option per person (2026-10-14)
 
 - Domain (`domain/services/follow_up.py`): `FollowUpScope` matches a stakeholder by its words in order as whole words
